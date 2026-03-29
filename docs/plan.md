@@ -2106,7 +2106,217 @@ git push origin feature/opencode-guard-impl
 
 ---
 
-### Task 11: Create Detection Engine
+### Task 11: Create Streaming Unmasker
+
+**Files:**
+- Create: `src/streaming-unmasker.js`
+- Create: `tests/streaming-unmasker.test.js`
+
+**Step 1: Write implementation**
+
+```javascript
+/**
+ * StreamingUnmasker handles unmasking of masked values that may span
+ * multiple chunks in streaming LLM responses.
+ * 
+ * Uses a sliding window buffer to handle partial matches at chunk boundaries.
+ */
+export class StreamingUnmasker {
+  constructor(session, options = {}) {
+    this.session = session;
+    this.maxMaskedLength = options.maxMaskedLength || 128;
+    this.maskedPattern = options.maskedPattern || /msk-[a-z0-9]{16,64}/g;
+    this.buffer = '';
+    this.closed = false;
+  }
+
+  /**
+   * Transform a chunk of streaming data.
+   * Returns unmasked content that can be safely flushed.
+   * Keeps a buffer for potential partial matches at the end.
+   * 
+   * @param {string} chunk - Input chunk from stream
+   * @returns {string} - Unmasked content ready to output
+   */
+  transform(chunk) {
+    if (this.closed) {
+      throw new Error('StreamingUnmasker already closed');
+    }
+
+    // Append new chunk to buffer
+    this.buffer += chunk;
+
+    // Find all complete masked values in buffer
+    const matches = [...this.buffer.matchAll(this.maskedPattern)];
+    let result = this.buffer;
+
+    // Replace masked values with originals (in reverse order to preserve indices)
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const masked = match[0];
+      const original = this.session.lookupOriginal(masked);
+      
+      if (original) {
+        result = result.slice(0, match.index) + original + result.slice(match.index + masked.length);
+      }
+    }
+
+    // Determine how much we can safely output
+    // Keep up to maxMaskedLength chars as potential partial match buffer
+    const flushPoint = Math.max(0, result.length - this.maxMaskedLength);
+    const output = result.slice(0, flushPoint);
+    this.buffer = result.slice(flushPoint);
+
+    return output;
+  }
+
+  /**
+   * Flush remaining buffer content.
+   * Call this when the stream ends.
+   * 
+   * @returns {string} - Final unmasked content
+   */
+  flush() {
+    if (this.closed) {
+      return '';
+    }
+
+    this.closed = true;
+
+    // Unmask any remaining content in buffer
+    let result = this.buffer;
+    const matches = [...result.matchAll(this.maskedPattern)];
+
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const masked = match[0];
+      const original = this.session.lookupOriginal(masked);
+      
+      if (original) {
+        result = result.slice(0, match.index) + original + result.slice(match.index + masked.length);
+      }
+    }
+
+    this.buffer = '';
+    return result;
+  }
+
+  /**
+   * Check if this unmasker has been closed.
+   * @returns {boolean}
+   */
+  isClosed() {
+    return this.closed;
+  }
+}
+
+/**
+ * Factory function to create a streaming unmasker for a session.
+ * @param {MaskSession} session - The masking session
+ * @param {object} options - Options for the unmasker
+ * @returns {StreamingUnmasker}
+ */
+export function createStreamingUnmasker(session, options = {}) {
+  return new StreamingUnmasker(session, options);
+}
+```
+
+**Step 2: Write tests**
+
+```javascript
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import { MaskSession } from '../src/session.js';
+import { StreamingUnmasker } from '../src/streaming-unmasker.js';
+
+describe('StreamingUnmasker', () => {
+  const globalSalt = 'test-salt';
+  
+  function createTestSession() {
+    return new MaskSession(globalSalt, { ttlMs: 3600000, maxMappings: 1000 });
+  }
+
+  it('should handle complete masked value in single chunk', () => {
+    const session = createTestSession();
+    // Simulate storing a masked value
+    session.originalToMasked.set('secret123', 'msk-abc123def4567890');
+    session.maskedToOriginal.set('msk-abc123def4567890', 'secret123');
+    
+    const unmasker = new StreamingUnmasker(session);
+    const result = unmasker.transform('Your token is msk-abc123def4567890');
+    
+    assert.strictEqual(result, 'Your token is secret123');
+    assert.strictEqual(unmasker.flush(), '');
+  });
+
+  it('should handle masked value split across chunks', () => {
+    const session = createTestSession();
+    session.originalToMasked.set('secret123', 'msk-abc123def4567890');
+    session.maskedToOriginal.set('msk-abc123def4567890', 'secret123');
+    
+    const unmasker = new StreamingUnmasker(session);
+    
+    // First chunk contains partial masked value
+    const chunk1 = unmasker.transform('Your token is msk-abc123');
+    assert.strictEqual(chunk1, 'Your token is '); // Nothing unmasked yet
+    
+    // Second chunk completes the masked value
+    const chunk2 = unmasker.transform('def4567890 and more');
+    assert.strictEqual(chunk2, 'secret123 and more');
+    
+    assert.strictEqual(unmasker.flush(), '');
+  });
+
+  it('should handle multiple masked values in one chunk', () => {
+    const session = createTestSession();
+    session.originalToMasked.set('secret1', 'msk-abc123def4567890');
+    session.originalToMasked.set('secret2', 'msk-xyz789uvw4561234');
+    session.maskedToOriginal.set('msk-abc123def4567890', 'secret1');
+    session.maskedToOriginal.set('msk-xyz789uvw4561234', 'secret2');
+    
+    const unmasker = new StreamingUnmasker(session);
+    const result = unmasker.transform('Token1: msk-abc123def4567890, Token2: msk-xyz789uvw4561234');
+    
+    assert.strictEqual(result, 'Token1: secret1, Token2: secret2');
+    assert.strictEqual(unmasker.flush(), '');
+  });
+
+  it('should flush remaining buffer on end', () => {
+    const session = createTestSession();
+    session.originalToMasked.set('secret123', 'msk-abc123def4567890');
+    session.maskedToOriginal.set('msk-abc123def4567890', 'secret123');
+    
+    const unmasker = new StreamingUnmasker(session);
+    unmasker.transform('Your token is msk-abc123def4567890');
+    
+    // Buffer may still hold content
+    const final = unmasker.flush();
+    assert.strictEqual(final + unmasker.buffer, 'Your token is secret123');
+  });
+
+  it('should throw when transforming after close', () => {
+    const session = createTestSession();
+    const unmasker = new StreamingUnmasker(session);
+    unmasker.flush();
+    
+    assert.throws(() => {
+      unmasker.transform('test');
+    }, /already closed/);
+  });
+});
+```
+
+**Step 3: Commit**
+
+```bash
+git add src/streaming-unmasker.js tests/streaming-unmasker.test.js
+git commit -m "feat: add streaming unmasker for chunked LLM responses"
+git push origin feature/opencode-guard-impl
+```
+
+---
+
+### Task 13: Create Detection Engine
 
 **Files:**
 - Create: `src/detector.js`
@@ -2527,7 +2737,7 @@ git push origin feature/opencode-guard-impl
 
 ## Phase 7: Documentation
 
-### Task 15: Write README
+### Task 16: Write README
 
 **Files:**
 - Create: `README.md`
