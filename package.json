@@ -1,0 +1,32 @@
+{
+  "name": "opencode-guard",
+  "version": "0.1.0",
+  "description": "OpenCode plugin with format-preserving masking for privacy",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": "./src/index.js",
+  "files": [
+    "src",
+    "README.md",
+    "README.zh-CN.md",
+    "vibeguard.config.json.example"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "prepack": "npm test"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "privacy",
+    "redaction",
+    "masking",
+    "format-preserving",
+    "pii",
+    "mcp"
+  ],
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

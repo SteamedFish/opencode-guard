@@ -1,0 +1,135 @@
+{
+  "enabled": true,
+  "debug": false,
+  "global_salt": "your-secret-salt-here-change-this",
+  "session_ttl": "1h",
+  "max_mappings": 100000,
+  "masking": {
+    "format_preserving": true,
+    "preserve_domains": true,
+    "preserve_prefixes": true
+  },
+  "detection": {
+    "parallel": true,
+    "ai_detection": false,
+    "ai_provider": "local",
+    "ai_timeout_ms": 500
+  },
+  "exclude_llm_endpoints": [],
+  "exclude_mcp_servers": [],
+  "patterns": {
+    "keywords": [],
+    "regex": [
+      {
+        "pattern": "sk-[A-Za-z0-9]{48}",
+        "category": "OPENAI_KEY",
+        "mask_as": "sk_token"
+      },
+      {
+        "pattern": "sk-proj-[A-Za-z0-9-]{48,}",
+        "category": "OPENAI_PROJECT_KEY",
+        "mask_as": "sk_variant_token"
+      },
+      {
+        "pattern": "sk-or-v1-[A-Za-z0-9-]{64,}",
+        "category": "OPENROUTER_KEY",
+        "mask_as": "sk_variant_token"
+      },
+      {
+        "pattern": "sk-litellm-[A-Za-z0-9]{48}",
+        "category": "LITELLM_KEY",
+        "mask_as": "sk_variant_token"
+      },
+      {
+        "pattern": "sk-kimi-[A-Za-z0-9]{32}",
+        "category": "KIMI_KEY",
+        "mask_as": "sk_variant_token"
+      },
+      {
+        "pattern": "sk-ant-[A-Za-z0-9]{32}",
+        "category": "ANTHROPIC_KEY",
+        "mask_as": "sk_variant_token"
+      },
+      {
+        "pattern": "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]+",
+        "category": "GITHUB_TOKEN",
+        "mask_as": "gh_token"
+      },
+      {
+        "pattern": "AKIA[0-9A-Z]{16}",
+        "category": "AWS_KEY",
+        "mask_as": "aws_token"
+      },
+      {
+        "pattern": "ASIA[0-9A-Z]{16}",
+        "category": "AWS_KEY",
+        "mask_as": "aws_token"
+      },
+      {
+        "pattern": "https?://[^:]+:[^@]+@[^\\s]+",
+        "category": "BASIC_AUTH_URL",
+        "mask_as": "basic_auth_url"
+      },
+      {
+        "pattern": "Basic\\s+[A-Za-z0-9+/]{20,}=*",
+        "category": "BASIC_AUTH_HEADER",
+        "mask_as": "basic_auth_header"
+      },
+      {
+        "pattern": "(?i)(?:postgres|postgresql|mysql|mongodb|redis|amqp|mqtt|ldap)://[^:]+:[^@]+@[^\\s]+",
+        "category": "DB_CONNECTION",
+        "mask_as": "db_connection"
+      },
+      {
+        "pattern": "mongodb\\+srv://[^\\s]+",
+        "category": "DB_CONNECTION",
+        "mask_as": "db_connection"
+      },
+      {
+        "pattern": "DATABASE_URL\\s*=\\s*[^\\s]+",
+        "category": "DB_ENV_VAR",
+        "mask_as": "db_env_var"
+      },
+      {
+        "pattern": "CONNECTION_STRING\\s*=\\s*[^\\s]+",
+        "category": "DB_ENV_VAR",
+        "mask_as": "db_env_var"
+      },
+      {
+        "pattern": "(?i)(?:api[_-]?key|secret[_-]?key|access[_-]?token|client[_-]?secret|auth[_-]?token|master[_-]?key|private[_-]?key|signing[_-]?key|encryption[_-]?key|database[_-]?url|connection[_-]?string|webhook[_-]?secret)\\s*[:=]\\s*\\S{8,}",
+        "category": "GENERIC_CREDENTIAL",
+        "mask_as": "generic_credential"
+      },
+      {
+        "pattern": "(?i)(?:apikey|secretkey|accesstoken|clientsecret|authtoken|masterkey|privatekey|signingkey|encryptionkey|webhooksecret)\\s*[:=]\\s*\\S{8,}",
+        "category": "GENERIC_CREDENTIAL",
+        "mask_as": "generic_credential"
+      },
+      {
+        "pattern": "(?i)password\\s*[:=]\\s*\\S{8,}",
+        "category": "PASSWORD",
+        "mask_as": "password"
+      },
+      {
+        "pattern": "(?i)passwd\\s*[:=]\\s*\\S{8,}",
+        "category": "PASSWORD",
+        "mask_as": "password"
+      },
+      {
+        "pattern": "(?i)pwd\\s*[:=]\\s*\\S{8,}",
+        "category": "PASSWORD",
+        "mask_as": "password"
+      }
+    ],
+    "builtin": ["email", "phone", "uuid", "ipv4"],
+    "exclude": ["example.com", "localhost", "127.0.0.1", "0.0.0.0"]
+  },
+  "custom_maskers": {
+    "my_custom_token": {
+      "type": "prefixed_token",
+      "prefix": "myapp-",
+      "suffix_length": 32,
+      "suffix_chars": "alphanumeric"
+    }
+  }
+}
