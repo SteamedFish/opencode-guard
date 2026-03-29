@@ -28,7 +28,7 @@ export function createSeededRNG(seed) {
   return function random(min = 0, max = 1) {
     let x = s0;
     let y = s1;
-    s0 = x;
+    s0 = y;
     x ^= x << BigInt(23);
     s1 = x ^ y ^ (x >> BigInt(17)) ^ (y >> BigInt(26));
     
