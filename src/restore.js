@@ -4,10 +4,20 @@ export function restoreText(text, session, debug = false) {
   }
 
   let result = text;
-  for (const [masked, original] of session.maskedToOriginal) {
-    if (result.includes(masked)) {
-      if (debug) console.log(`[opencode-guard] restoreText: found masked "${masked}" -> "${original}"`);
-      result = result.split(masked).join(original);
+  let changed = true;
+  let iterations = 0;
+  const maxIterations = 10;
+  
+  while (changed && iterations < maxIterations) {
+    changed = false;
+    iterations++;
+    
+    for (const [masked, original] of session.maskedToOriginal) {
+      if (result.includes(masked)) {
+        if (debug) console.log(`[opencode-guard] restoreText: found masked "${masked}" -> "${original}"`);
+        result = result.split(masked).join(original);
+        changed = true;
+      }
     }
   }
 

@@ -132,3 +132,36 @@ test('restoreText only restores exact masked values, not substrings', () => {
   const restored2 = restoreText(textWithSubstring, session);
   assert.strictEqual(restored2, textWithSubstring, 'Should not modify text without exact masked value');
 });
+
+test('restoreText handles re-masking by recursively restoring', () => {
+  const session = createTestSession();
+  
+  // Simulate re-masking scenario: original -> masked1 -> masked2
+  const original = 'clio-agent@sisyphuslabs.ai';
+  const masked1 = session.getOrCreateMasked(original, 'EMAIL', 'email');
+  const masked2 = session.getOrCreateMasked(masked1, 'EMAIL', 'email');
+  
+  // Text contains the doubly-masked value
+  const text = `Co-authored-by: <${masked2}>`;
+  const restored = restoreText(text, session);
+  
+  // Should restore all the way back to original
+  assert.ok(restored.includes(original), `Expected "${original}" but got "${restored}"`);
+  assert.ok(!restored.includes(masked1), `Should not contain masked1 "${masked1}"`);
+  assert.ok(!restored.includes(masked2), `Should not contain masked2 "${masked2}"`);
+});
+
+test('restoreText handles triple-masking', () => {
+  const session = createTestSession();
+  
+  // Triple masking scenario
+  const original = 'secret@example.com';
+  const masked1 = session.getOrCreateMasked(original, 'EMAIL', 'email');
+  const masked2 = session.getOrCreateMasked(masked1, 'EMAIL', 'email');
+  const masked3 = session.getOrCreateMasked(masked2, 'EMAIL', 'email');
+  
+  const text = `Email: ${masked3}`;
+  const restored = restoreText(text, session);
+  
+  assert.strictEqual(restored, 'Email: secret@example.com', 'Should restore through triple-masking');
+});
