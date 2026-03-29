@@ -11,14 +11,9 @@ const __dirname = dirname(__filename);
 export const DEFAULT_MODEL_CACHE_DIR = process.env.HF_HOME || 
   join(process.env.HOME || process.env.USERPROFILE || '.', '.cache', 'huggingface');
 
-/**
- * Get the plugin's node_modules directory
- * This is where we'll install optional dependencies
- */
-function getPluginNodeModules() {
-  // Go up from src/ai-detector/ to project root
+function getPluginDirectory() {
   const projectRoot = join(__dirname, '..', '..', '..');
-  return join(projectRoot, 'node_modules');
+  return projectRoot;
 }
 
 /**
@@ -44,28 +39,28 @@ export async function isPackageAvailable(packageName) {
  * @returns {Promise<boolean>} - Whether installation succeeded
  */
 export async function autoInstallPackage(packageName, options = {}) {
-  const { save = false, global = false, cwd = process.cwd() } = options;
-  
+  const { save = false, global = false } = options;
+  const cwd = options.cwd || getPluginDirectory();
+
   try {
     console.log(`[opencode-guard] Auto-installing ${packageName}...`);
-    
+
     const args = ['install', packageName];
     if (!save) args.push('--no-save');
     if (global) args.push('--global');
-    
-    // Use --legacy-peer-deps to avoid peer dependency conflicts
+
     args.push('--legacy-peer-deps');
-    
+
     execSync(`npm ${args.join(' ')}`, {
       cwd,
-      stdio: 'pipe', // Suppress output unless there's an error
-      timeout: 120000, // 2 minute timeout
+      stdio: 'pipe',
+      timeout: 120000,
       env: {
         ...process.env,
-        npm_config_loglevel: 'error', // Only show errors
+        npm_config_loglevel: 'error',
       }
     });
-    
+
     console.log(`[opencode-guard] Successfully installed ${packageName}`);
     return true;
   } catch (err) {
@@ -84,26 +79,23 @@ export async function autoInstallPackage(packageName, options = {}) {
  * @returns {Promise<boolean>} - Whether package is available
  */
 export async function ensurePackage(packageName, options = {}) {
-  const { autoInstall = false, cwd = process.cwd() } = options;
-  
-  // First check if already available
+  const { autoInstall = false } = options;
+  const cwd = options.cwd || getPluginDirectory();
+
   if (await isPackageAvailable(packageName)) {
     return true;
   }
-  
-  // If auto-install is disabled, just return false
+
   if (!autoInstall) {
     return false;
   }
-  
-  // Try to auto-install
+
   const installed = await autoInstallPackage(packageName, { cwd });
-  
-  // Check again if it's now available
+
   if (installed) {
     return await isPackageAvailable(packageName);
   }
-  
+
   return false;
 }
 

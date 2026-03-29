@@ -80,14 +80,15 @@ export async function detectSensitiveData(text, patterns, aiDetector = null) {
   if (aiDetector) {
     try {
       aiResults = await aiDetector.detect(text);
+      if (aiResults.length > 0 && process.env.OPENCODE_GUARD_DEBUG) {
+        console.log(`[opencode-guard] AI detection found ${aiResults.length} sensitive value(s)`);
+      }
     } catch (err) {
-      // AI detection failures are non-fatal
       if (process.env.OPENCODE_GUARD_DEBUG) {
         console.warn(`[opencode-guard] AI detection error: ${err.message}`);
       }
     }
   }
-  
-  // Merge regex and AI results
+
   return mergeResults(filtered, aiResults);
 }

@@ -35,6 +35,7 @@ export const OpenCodeGuard = async (ctx) => {
 
   // Initialize AI detector if enabled
   let aiDetector = null;
+  let aiDetectionReady = false;
   if (config.detection?.aiDetection) {
     aiDetector = new AIDetector({
       provider: config.detection.aiProvider,
@@ -42,11 +43,29 @@ export const OpenCodeGuard = async (ctx) => {
       autoInstallDeps: config.detection.autoInstallDeps,
       localModel: config.detection.localModel,
     });
+
     if (debug) {
       console.log(`[opencode-guard] AI detection enabled (${config.detection.aiProvider})`);
       if (config.detection.autoInstallDeps) {
         console.log(`[opencode-guard] Auto-install enabled for AI dependencies`);
       }
+    }
+
+    // Eagerly initialize AI detector so auto-install happens on startup
+    try {
+      await aiDetector.initialize();
+      aiDetectionReady = true;
+      if (debug) {
+        console.log(`[opencode-guard] AI detector initialized successfully`);
+      }
+    } catch (err) {
+      if (debug) {
+        console.warn(`[opencode-guard] AI detector initialization failed: ${err.message}`);
+        if (!config.detection.autoInstallDeps) {
+          console.log(`[opencode-guard] Tip: Set auto_install_deps: true to automatically install missing dependencies`);
+        }
+      }
+      // Don't throw - plugin should work without AI detection
     }
   }
 

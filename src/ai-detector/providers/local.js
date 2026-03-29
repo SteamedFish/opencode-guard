@@ -7,7 +7,7 @@ export class LocalAIProvider extends AIProvider {
   constructor(config = {}) {
     super(config);
     this.pipeline = null;
-    this.modelName = config.model || 'joneauxedgar/pasteproof-pii-detector-v2';
+    this.modelName = config.model || config.localModel || 'joneauxedgar/pasteproof-pii-detector-v2';
     this.autoInstall = config.autoInstallDeps || false;
     this.initialized = false;
     this.installAttempted = false;
