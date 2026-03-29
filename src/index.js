@@ -4,6 +4,7 @@ import { MaskSession } from './session.js';
 import { redactText, redactDeep } from './engine.js';
 import { restoreText, restoreDeep } from './restore.js';
 import { initializeCustomMaskers } from './maskers/index.js';
+import { StreamingUnmasker } from './streaming-unmasker.js';
 
 /**
  * OpenCode Guard Plugin
@@ -33,23 +34,41 @@ export const OpenCodeGuard = async (ctx) => {
 
   const patterns = buildPatternSet(config.patterns);
   const sessions = new Map();
+  const streamingUnmaskers = new Map();
 
   const getSession = (sessionID) => {
     const key = String(sessionID ?? '');
     if (!key) return null;
-    
+
     let session = sessions.get(key);
     if (session) {
       session.cleanup();
       return session;
     }
-    
+
     session = new MaskSession(config.globalSalt, {
       ttlMs: config.ttlMs,
       maxMappings: config.maxMappings,
     });
     sessions.set(key, session);
     return session;
+  };
+
+  const getStreamingUnmasker = (sessionID) => {
+    const key = String(sessionID ?? '');
+    if (!key) return null;
+
+    let unmasker = streamingUnmaskers.get(key);
+    if (unmasker && !unmasker.isClosed()) {
+      return unmasker;
+    }
+
+    const session = getSession(sessionID);
+    if (!session) return null;
+
+    unmasker = new StreamingUnmasker(session);
+    streamingUnmaskers.set(key, unmasker);
+    return unmasker;
   };
 
   const isExcludedEndpoint = (endpoint) => {
@@ -133,15 +152,40 @@ export const OpenCodeGuard = async (ctx) => {
     'experimental.text.complete': async (input, output) => {
       if (!output || typeof output !== 'object') return;
       if (typeof output.text !== 'string' || !output.text) return;
-      
+
       const session = getSession(input?.sessionID);
       if (!session) return;
 
       const before = output.text;
       output.text = restoreText(output.text, session);
-      
+
       if (debug && output.text !== before) {
         console.log('[opencode-guard] restored masked values in response');
+      }
+    },
+
+    'experimental.text.chunk': async (input, output) => {
+      if (!output || typeof output !== 'object') return;
+      if (typeof output.text !== 'string') return;
+
+      const unmasker = getStreamingUnmasker(input?.sessionID);
+      if (!unmasker) return;
+
+      const before = output.text;
+      output.text = unmasker.transform(output.text);
+
+      if (debug && output.text !== before) {
+        console.log('[opencode-guard] restored masked values in streaming chunk');
+      }
+    },
+
+    'experimental.stream.end': async (input) => {
+      const key = String(input?.sessionID ?? '');
+      if (!key) return;
+
+      const unmasker = streamingUnmaskers.get(key);
+      if (unmasker && !unmasker.isClosed()) {
+        streamingUnmaskers.delete(key);
       }
     },
 

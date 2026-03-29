@@ -82,13 +82,29 @@ test('StreamingUnmasker handles OpenAI sk- token format', () => {
 
 test('StreamingUnmasker handles email address format', () => {
   const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
-  session.originalToMasked.set('real@email.com', 'a3f7@example.com');
-  session.maskedToOriginal.set('a3f7@example.com', 'real@email.com');
-  
+  session.originalToMasked.set('aiaj@email.com', 't9v5@example.com');
+  session.maskedToOriginal.set('t9v5@example.com', 'aiaj@email.com');
+
   const unmasker = new StreamingUnmasker(session);
-  const result = unmasker.transform('Contact: a3f7@example.com for details');
-  
-  assert.strictEqual(result, 'Contact: real@email.com for details');
+  const result = unmasker.transform('Contact: t9v5@example.com for details');
+
+  assert.strictEqual(result, 'Contact: aiaj@email.com for details');
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker handles email split across chunks', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.originalToMasked.set('user@example.com', 'abcd@example.com');
+  session.maskedToOriginal.set('abcd@example.com', 'user@example.com');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('Email: abcd@exa');
+  assert.strictEqual(chunk1, 'Email: ');
+
+  const chunk2 = unmasker.transform('mple.com for contact');
+  assert.strictEqual(chunk2, 'user@example.com for contact');
+
   assert.strictEqual(unmasker.flush(), '');
 });
 
@@ -110,10 +126,114 @@ test('StreamingUnmasker handles mixed token types', () => {
   session.originalToMasked.set('openai-key', 'sk-TestKey123456');
   session.maskedToOriginal.set('ghp_abc123xyz789', 'gh-token');
   session.maskedToOriginal.set('sk-TestKey123456', 'openai-key');
-  
+
   const unmasker = new StreamingUnmasker(session);
   const result = unmasker.transform('GitHub: ghp_abc123xyz789, OpenAI: sk-TestKey123456');
-  
+
   assert.strictEqual(result, 'GitHub: gh-token, OpenAI: openai-key');
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker handles IPv4 address split across chunks', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  const maskedIP = '192.168.255.232';
+  const originalIP = '192.168.1.100';
+  session.originalToMasked.set(originalIP, maskedIP);
+  session.maskedToOriginal.set(maskedIP, originalIP);
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('Server at 192.168.');
+  assert.strictEqual(chunk1, 'Server at ');
+
+  const chunk2 = unmasker.transform('255.232 is online');
+  assert.strictEqual(chunk2, `${originalIP} is online`);
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker handles multiple tokens split across chunks', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.originalToMasked.set('secret-token-1', 'ghp_111111111111');
+  session.originalToMasked.set('secret-token-2', 'ghp_222222222222');
+  session.maskedToOriginal.set('ghp_111111111111', 'secret-token-1');
+  session.maskedToOriginal.set('ghp_222222222222', 'secret-token-2');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('First: ghp_111');
+  assert.strictEqual(chunk1, 'First: ');
+
+  const chunk2 = unmasker.transform('111111111, Second: ');
+  assert.strictEqual(chunk2, 'secret-token-1, Second: ');
+
+  const chunk3 = unmasker.transform('ghp_222222222222 done');
+  assert.strictEqual(chunk3, 'secret-token-2 done');
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker handles empty chunks', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.originalToMasked.set('mytoken', 'ghp_abc123def456');
+  session.maskedToOriginal.set('ghp_abc123def456', 'mytoken');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('');
+  assert.strictEqual(chunk1, '');
+
+  const chunk2 = unmasker.transform('Token: ghp_abc123def456');
+  assert.strictEqual(chunk2, 'Token: mytoken');
+
+  const chunk3 = unmasker.transform('');
+  assert.strictEqual(chunk3, '');
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker handles text without any masked values', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('Hello, this is ');
+  assert.strictEqual(chunk1, 'Hello, this is ');
+
+  const chunk2 = unmasker.transform('just regular text');
+  assert.strictEqual(chunk2, 'just regular text');
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker handles token at very beginning of chunk', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.originalToMasked.set('secrettoken', 'ghp_xxxxxxxxxxxx');
+  session.maskedToOriginal.set('ghp_xxxxxxxxxxxx', 'secrettoken');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('Start: ghp_');
+  assert.strictEqual(chunk1, 'Start: ');
+
+  const chunk2 = unmasker.transform('xxxxxxxxxxxx end');
+  assert.strictEqual(chunk2, 'secrettoken end');
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker handles token at very end of chunk', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.originalToMasked.set('secrettoken', 'ghp_xxxxxxxxxxxx');
+  session.maskedToOriginal.set('ghp_xxxxxxxxxxxx', 'secrettoken');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('Prefix ghp_xxxx');
+  assert.strictEqual(chunk1, 'Prefix ');
+
+  const chunk2 = unmasker.transform('xxxxxxxx more text');
+  assert.strictEqual(chunk2, 'secrettoken more text');
+
   assert.strictEqual(unmasker.flush(), '');
 });
