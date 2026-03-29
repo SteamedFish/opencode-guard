@@ -23,7 +23,7 @@ export function buildPatternSet(patterns) {
   const hasExplicitPatterns = Array.isArray(raw.regex) && raw.regex.length > 0 ||
                                 Array.isArray(raw.keywords) && raw.keywords.length > 0 ||
                                 Array.isArray(raw.builtin);
-  if (patterns && typeof patterns === 'object' && !hasExplicitPatterns) {
+  if (!hasExplicitPatterns) {
     raw.builtin = Array.from(BUILTIN.keys());
   }
   

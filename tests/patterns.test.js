@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { buildPatternSet } from '../src/patterns.js';
 
-test('buildPatternSet builds empty set for null input', () => {
+test('buildPatternSet loads builtins for null input', () => {
   const result = buildPatternSet(null);
   assert.strictEqual(result.keywords.length, 0);
-  assert.strictEqual(result.regex.length, 0);
+  assert.ok(result.regex.length > 0, 'should have builtin patterns for null input');
   assert.strictEqual(result.exclude.size, 0);
 });
 
