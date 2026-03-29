@@ -20,14 +20,18 @@ export class AIDetector {
     try {
       this.provider = createAIProvider(this.config.provider, this.config);
       
-      // Check if provider is available (for local provider, this may trigger auto-install)
-      const available = await this.provider.isAvailable();
-      if (!available && this.config.provider === 'local') {
-        // Try to initialize which may trigger auto-install
+      // For local provider, eagerly initialize to trigger auto-install if needed
+      if (this.config.provider === 'local') {
         try {
           await this.provider.initialize();
         } catch (err) {
           console.warn(`[opencode-guard] AI provider not available: ${err.message}`);
+          this.provider = null;
+        }
+      } else {
+        // For other providers, just check availability
+        const available = await this.provider.isAvailable();
+        if (!available) {
           this.provider = null;
         }
       }
@@ -36,6 +40,7 @@ export class AIDetector {
     } catch (err) {
       console.warn(`[opencode-guard] Failed to initialize AI provider: ${err.message}`);
       this.provider = null;
+      this.initialized = true;
     }
   }
 
