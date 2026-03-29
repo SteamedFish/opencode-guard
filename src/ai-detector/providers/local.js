@@ -8,10 +8,10 @@ export class LocalAIProvider extends AIProvider {
     this.initialized = false;
   }
 
-  isAvailable() {
+  async isAvailable() {
     try {
-      const module = require('@xenova/transformers');
-      return !!module.pipeline;
+      await import('@xenova/transformers');
+      return true;
     } catch {
       return false;
     }

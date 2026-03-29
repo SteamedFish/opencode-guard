@@ -5,7 +5,7 @@ import { LocalAIProvider } from '../../src/ai-detector/providers/local.js';
 test('LocalAIProvider detects password in sentence', async () => {
   const provider = new LocalAIProvider({});
   
-  if (!provider.isAvailable()) {
+  if (!(await provider.isAvailable())) {
     console.log('Skipping: Transformers.js not installed');
     return;
   }
@@ -21,7 +21,7 @@ test('LocalAIProvider detects password in sentence', async () => {
 test('LocalAIProvider detects API key in code', async () => {
   const provider = new LocalAIProvider({});
   
-  if (!provider.isAvailable()) {
+  if (!(await provider.isAvailable())) {
     console.log('Skipping: Transformers.js not installed');
     return;
   }
