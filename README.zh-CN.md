@@ -16,6 +16,7 @@ OpenCode Guard 是一个专注于隐私保护的 [OpenCode](https://opencode.ai)
 - ⚡ **并行检测**：正则表达式和 AI 检测同时运行
 - 🔌 **LLM + MCP 支持**：同时支持 LLM API 调用和 MCP 工具调用的脱敏
 - 🚫 **排除端点**：可配置特定端点跳过脱敏
+- 🔧 **智能 MCP 处理**：针对本地和外部 MCP 服务器的不同处理（[查看文档](docs/MCP_SERVERS.zh-CN.md)）
 - 💾 **内存存储**：不使用 SQLite，不持久化存储敏感信息
 
 ## 工作原理
@@ -183,7 +184,7 @@ EOF
 | `detection.parallel` | 正则和 AI 检测并行运行 | `true` |
 | `detection.ai_detection` | 启用基于 AI 的检测 | `false` |
 | `exclude_llm_endpoints` | 跳过脱敏的 LLM 端点 | `[]` |
-| `exclude_mcp_servers` | 跳过脱敏的 MCP 服务器 | `[]` |
+| `exclude_mcp_servers` | 视为"本地"的 MCP 服务器（参见 [MCP 服务器指南](docs/MCP_SERVERS.zh-CN.md)） | `[]` |
 
 ### 配置文件位置（按优先级排序）
 
@@ -279,6 +280,33 @@ ls -la ~/.config/opencode/vibeguard.config.json
 ls -la ./vibeguard.config.json
 ls -la ./.opencode/vibeguard.config.json
 ```
+
+### Git 提交包含掩码值
+
+**症状**：提交消息或文件内容包含掩码值（如 `ce_.rbgrrq@sisyphuslabs.ai`）而不是真实邮箱。
+
+**原因**：git MCP 服务器不在 `exclude_mcp_servers` 列表中，因此它接收到的是掩码数据。
+
+**解决方案**：将您的 git MCP 服务器添加到排除列表：
+```json
+{
+  "exclude_mcp_servers": ["git", "github", "filesystem"]
+}
+```
+
+详见 [MCP 服务器配置指南](docs/MCP_SERVERS.zh-CN.md)。
+
+### MCP 工具调用因掩码数据而失败
+
+**症状**：外部 API 调用（邮件、Slack、Webhook）失败，因为它们接收到掩码数据。
+
+**原因**：这是**故意的安全行为**。外部服务器应该接收掩码数据以保护您的秘密。
+
+**解决方案**：
+- 对于确实需要真实数据的外部 API：添加到 `exclude_mcp_servers`（谨慎使用）
+- 对于必须使用真实数据的操作：使用本地工具（git、文件系统）代替
+
+⚠️ **警告**：将外部 API 添加到排除列表会将您的敏感数据暴露给第三方。
 
 ## 安全说明
 

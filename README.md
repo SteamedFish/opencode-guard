@@ -16,6 +16,7 @@ OpenCode Guard is a privacy-focused plugin for [OpenCode](https://opencode.ai) t
 - ⚡ **Parallel Detection**: Regex + AI detection run simultaneously
 - 🔌 **LLM + MCP Support**: Masks both LLM API calls and MCP tool invocations
 - 🚫 **Excluded Endpoints**: Configure specific endpoints to skip masking
+- 🔧 **Smart MCP Handling**: Different treatment for local vs external MCP servers ([see docs](docs/MCP_SERVERS.md))
 - 💾 **In-Memory Storage**: No SQLite, no persistent storage of secrets
 
 ## How It Works
@@ -215,7 +216,7 @@ Create `vibeguard.config.json` in the same directory as your `opencode.json` (yo
 | `detection.parallel` | Run regex and AI detection in parallel | `true` |
 | `detection.ai_detection` | Enable AI-based detection | `false` |
 | `exclude_llm_endpoints` | LLM endpoints to skip masking | `[]` |
-| `exclude_mcp_servers` | MCP servers to skip masking | `[]` |
+| `exclude_mcp_servers` | MCP servers to treat as "local" (see [MCP Server Guide](docs/MCP_SERVERS.md)) | `[]` |
 
 ### Config File Locations (in order of priority)
 
@@ -311,6 +312,33 @@ ls -la ~/.config/opencode/vibeguard.config.json
 ls -la ./vibeguard.config.json
 ls -la ./.opencode/vibeguard.config.json
 ```
+
+### Git commits contain masked values
+
+**Symptom**: Commit messages or file contents contain masked values like `ce_.rbgrrq@sisyphuslabs.ai` instead of the real email.
+
+**Cause**: The git MCP server is not in the `exclude_mcp_servers` list, so it receives masked data.
+
+**Solution**: Add your git MCP server to the exclusion list:
+```json
+{
+  "exclude_mcp_servers": ["git", "github", "filesystem"]
+}
+```
+
+See [MCP Server Configuration Guide](docs/MCP_SERVERS.md) for detailed explanation.
+
+### MCP tool calls failing with masked data
+
+**Symptom**: External API calls (email, Slack, webhooks) fail because they receive masked data.
+
+**Cause**: This is **intentional security behavior**. External servers should receive masked data to protect your secrets.
+
+**Solution**: 
+- For external APIs that legitimately need real data: Add to `exclude_mcp_servers` (use with caution)
+- For operations that must use real data: Use local tools (git, filesystem) instead
+
+⚠️ **Warning**: Adding external APIs to exclusions exposes your sensitive data to third parties.
 
 ## Security Notes
 
