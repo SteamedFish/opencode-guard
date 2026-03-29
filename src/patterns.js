@@ -20,6 +20,13 @@ const BUILTIN = new Map([
 export function buildPatternSet(patterns) {
   const raw = patterns && typeof patterns === 'object' ? patterns : {};
   
+  const hasExplicitPatterns = Array.isArray(raw.regex) && raw.regex.length > 0 ||
+                                Array.isArray(raw.keywords) && raw.keywords.length > 0 ||
+                                Array.isArray(raw.builtin);
+  if (patterns && typeof patterns === 'object' && !hasExplicitPatterns) {
+    raw.builtin = Array.from(BUILTIN.keys());
+  }
+  
   const keywords = (raw.keywords || [])
     .map(k => {
       if (!k || typeof k !== 'object') return null;
@@ -54,12 +61,13 @@ export function buildPatternSet(patterns) {
   for (const name of (raw.builtin || [])) {
     const builtin = BUILTIN.get(String(name).trim());
     if (builtin) {
+      const flags = builtin.flags.includes('g') ? builtin.flags : builtin.flags + 'g';
       regex.push({
-        regex: new RegExp(builtin.pattern, builtin.flags),
+        regex: new RegExp(builtin.pattern, flags),
         category: builtin.category,
         maskAs: builtin.maskAs,
         pattern: builtin.pattern,
-        flags: builtin.flags,
+        flags: flags,
       });
     }
   }
