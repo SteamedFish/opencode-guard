@@ -425,22 +425,42 @@ test('OpenCodeGuard experimental.text.complete handles non-string output', async
   }
 });
 
-test('OpenCodeGuard mcp.tool.call.before masks args', async () => {
+test('OpenCodeGuard mcp.tool.call.before restores masked args for excluded servers', async () => {
   const tempDir = await createTempDir();
-  await createTempConfig(tempDir, { 
-    enabled: true, 
+  await createTempConfig(tempDir, {
+    enabled: true,
     global_salt: 'test-salt-1234567890abcdef',
-    patterns: { builtin: ['email'] }
+    patterns: { builtin: ['email'] },
+    exclude_mcp_servers: ['local-server']
   });
-  
+
   try {
     const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transformHook = plugin['experimental.chat.messages.transform'];
     const beforeHook = plugin['mcp.tool.call.before'];
-    
-    const output = { args: { email: 'user@example.com' } };
-    await beforeHook({ sessionID: 'test-session', serverName: 'test-server' }, output);
-    
-    assert.ok(!output.args.email.includes('user@example.com'));
+
+    // First, create a session by processing a message (this creates the mapping)
+    const output = {
+      messages: [{
+        info: { sessionID: 'test-session' },
+        parts: [{
+          type: 'text',
+          text: 'Contact user@example.com for help'
+        }]
+      }]
+    };
+    await transformHook({}, output);
+
+    // The email should now be masked in the message
+    const maskedEmail = output.messages[0].parts[0].text.match(/[\w._-]+@example\.com/)[0];
+    assert.ok(maskedEmail !== 'user@example.com', 'Email should be masked');
+
+    // Now simulate MCP tool call with the masked email in args (excluded/local server)
+    const mcpOutput = { args: { email: maskedEmail } };
+    await beforeHook({ sessionID: 'test-session', serverName: 'local-server' }, mcpOutput);
+
+    // The args should be restored to original for excluded servers
+    assert.strictEqual(mcpOutput.args.email, 'user@example.com', 'Args should be restored for excluded servers');
   } finally {
     await cleanup(tempDir);
   }
@@ -470,29 +490,25 @@ test('OpenCodeGuard mcp.tool.call.before skips excluded servers', async () => {
   }
 });
 
-test('OpenCodeGuard mcp.tool.call.after restores result', async () => {
+test('OpenCodeGuard mcp.tool.call.after masks result', async () => {
   const tempDir = await createTempDir();
-  await createTempConfig(tempDir, { 
-    enabled: true, 
+  await createTempConfig(tempDir, {
+    enabled: true,
     global_salt: 'test-salt-1234567890abcdef',
     patterns: { builtin: ['email'] }
   });
-  
+
   try {
     const plugin = await OpenCodeGuard({ directory: tempDir });
-    const beforeHook = plugin['mcp.tool.call.before'];
     const afterHook = plugin['mcp.tool.call.after'];
-    
-    // First mask via before hook
-    const beforeOutput = { args: { email: 'user@example.com' } };
-    await beforeHook({ sessionID: 'test-session' }, beforeOutput);
-    const maskedEmail = beforeOutput.args.email;
-    
-    // Then restore via after hook
-    const afterOutput = { result: { email: maskedEmail } };
+
+    // Simulate tool result containing sensitive data
+    const afterOutput = { result: { email: 'user@example.com' } };
     await afterHook({ sessionID: 'test-session' }, afterOutput);
-    
-    assert.strictEqual(afterOutput.result.email, 'user@example.com');
+
+    // Result should be masked to prevent leaking secrets to LLM
+    assert.ok(afterOutput.result.email !== 'user@example.com', 'Result should be masked');
+    assert.ok(afterOutput.result.email.includes('@example.com'), 'Domain should be preserved');
   } finally {
     await cleanup(tempDir);
   }
