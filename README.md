@@ -85,7 +85,25 @@ git clone https://github.com/SteamedFish/opencode-guard.git
 
 ## Configuration
 
-Create a `vibeguard.config.json` file in your project root:
+### Quick Setup
+
+Create a `vibeguard.config.json` file in one of these locations:
+
+**Option 1: Global Config (Recommended)**
+```bash
+mkdir -p ~/.config/opencode
+cat > ~/.config/opencode/vibeguard.config.json << 'EOF'
+{
+  "enabled": true,
+  "global_salt": "your-secret-salt-change-this"
+}
+EOF
+```
+
+**Option 2: Project-Specific Config**
+Create `vibeguard.config.json` in the same directory as your `opencode.json` (your OpenCode project root).
+
+### Full Example
 
 ```json
 {
@@ -139,10 +157,14 @@ Create a `vibeguard.config.json` file in your project root:
 
 ### Config File Locations (in order of priority)
 
-1. Path specified by `OPENCODE_VIBEGUARD_CONFIG` environment variable
-2. `./vibeguard.config.json` (project root)
-3. `./.opencode/vibeguard.config.json`
-4. `~/.config/opencode/vibeguard.config.json`
+The plugin searches for config in this order (first found wins):
+
+1. **`OPENCODE_VIBEGUARD_CONFIG`** environment variable (explicit path)
+2. **`./vibeguard.config.json`** — Project root (where your `opencode.json` is)
+3. **`./.opencode/vibeguard.config.json`** — Project's `.opencode/` subdirectory
+4. **`~/.config/opencode/vibeguard.config.json`** — Global user config
+
+**Important**: Currently, configs do **NOT** merge. The first config file found is used as-is. If you have both global and project configs, only the project config will be loaded.
 
 ## Supported Patterns
 
