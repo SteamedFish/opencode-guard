@@ -41,6 +41,7 @@ OpenCode Guard 是一个专注于隐私保护的 [OpenCode](https://opencode.ai)
 | GitHub 令牌 | `ghp_xxxxxx` | `ghp_yyyyyy` | 保留前缀 |
 | IPv4 | `192.168.1.100` | `192.168.x.x` | 保留网络前缀 |
 | IPv6 | `fe80::1` | `fe80:0:0:0::xxxx` | 保留网络前缀 |
+| MAC 地址 | `00:1b:44:11:3a:b7` | `00:1b:44:xx:xx:xx` | 保留 OUI 前缀 |
 | 数据库 URL | `postgres://user:pass@host` | `postgres://****:****@host` | 脱敏凭据 |
 | 密码 | `password=secret` | `password=********` | 脱敏值 |
 | 用户名 | `username=admin` | `username=********` | 脱敏值 |
@@ -157,6 +158,7 @@ git clone https://github.com/SteamedFish/opencode-guard.git
 - **密码**：`password=...`, `passwd=...`, `pwd=...`
 - **用户名**：`username=...`, `user=...`
 - **IP 地址**：IPv4、IPv6（保留网络前缀）
+- **MAC 地址**：`aa:bb:cc:dd:ee:ff`、`aa-bb-cc-dd-ee-ff`、`AABBCCDDEEFF`（保留 OUI 前缀）
 - **UUID**：标准 UUID 格式
 
 ### 自定义模式

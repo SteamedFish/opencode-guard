@@ -42,6 +42,7 @@ OpenCode Guard is a privacy-focused plugin for [OpenCode](https://opencode.ai) t
 | GitHub Token | `ghp_xxxxxx` | `ghp_yyyyyy` | Preserve prefix |
 | IPv4 | `192.168.1.100` | `192.168.x.x` | Keep network prefix |
 | IPv6 | `fe80::1` | `fe80:0:0:0::xxxx` | Keep network prefix |
+| MAC Address | `00:1b:44:11:3a:b7` | `00:1b:44:xx:xx:xx` | Preserve OUI prefix |
 | DB URL | `postgres://user:pass@host` | `postgres://****:****@host` | Mask credentials |
 | Password | `password=secret` | `password=********` | Mask value |
 | Username | `username=admin` | `username=********` | Mask value |
@@ -158,6 +159,7 @@ Create a `vibeguard.config.json` file in your project root:
 - **Passwords**: `password=...`, `passwd=...`, `pwd=...`
 - **Usernames**: `username=...`, `user=...`
 - **IPs**: IPv4, IPv6 (preserves network prefix)
+- **MAC Addresses**: `aa:bb:cc:dd:ee:ff`, `aa-bb-cc-dd-ee-ff`, `AABBCCDDEEFF` (preserves OUI prefix)
 - **UUIDs**: Standard UUID format
 
 ### Custom Patterns
