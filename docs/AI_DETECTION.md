@@ -56,7 +56,7 @@ Option 2 - Auto-installation (automatically installs package on first use):
   "detection": {
     "ai_detection": true,
     "ai_provider": "local",
-    "local_model": "joneauxedgar/pasteproof-pii-detector-v2",
+    "local_model": "SoelMgd/bert-pii-detection",
     "auto_install_deps": false,
     "ai_timeout_ms": 500
   }
@@ -73,26 +73,84 @@ The first time you use a local model, it will be automatically downloaded and ca
 
 #### Recommended Local Models
 
-The local provider uses token classification models. **Important: General NER models (like bert-base-NER) are NOT suitable for detecting passwords and secrets** - they're trained to recognize locations, organizations, and persons, not credentials.
+The local provider uses token classification models. **Important: You need PII-specific models, not general NER models.**
+
+**What's the difference?**
+- **PII Models**: Detect passwords, API keys, credit cards, SSNs, emails, secrets
+- **NER Models**: Only detect names, organizations, locations (PER, ORG, LOC, MISC)
 
 **Why smaller models work better:**
 - Large language models (7B+ parameters) may "overthink" and try to interpret content instead of just identifying patterns
 - They might generate explanatory text or "help" in unexpected ways
 - Smaller, task-specific models are trained for exactly one job: detecting sensitive data
 
-**Recommended PII-specific models:**
+**Recommended PII Detection Models (All Compatible with Transformers.js):**
 
-| Model | Size | Best For | Password Detection | Notes |
-|-------|------|----------|-------------------|-------|
-| `joneauxedgar/pasteproof-pii-detector-v2` | ~100MB | **Passwords, secrets, API keys** | ✅ Yes (VUL_JXM) | **Recommended default**. 97.2% F1, ignores test data like `process.env.API_KEY` |
-| `iiiorg/piiranha-v1-detect-personal-information` | ~400MB | **PII-heavy content** | ✅ Yes (98% precision) | Detects 17 PII types. 100% email accuracy |
-| `dslim/bert-base-NER` | ~100MB | Names, organizations, locations | ❌ No | Only for general NER, NOT for passwords |
+| Model | Size | Architecture | Best For | Password/Secret Detection | Notes |
+|-------|------|--------------|----------|---------------------------|-------|
+| `SoelMgd/bert-pii-detection` | ~66MB | DistilBERT | **General PII** | ✅ Yes | **Recommended default**. 56 PII categories, AI4Privacy dataset |
+| `gneeraj/deeppass2-bert` | ~560MB | XLM-RoBERTa | **Passwords, secrets, API keys** | ✅ Yes | Specifically trained for secret detection in code |
+| `iiiorg/piiranha-v1-detect-personal-information` | ~400MB | DeBERTa-v3 | **PII-heavy content** | ✅ Yes (98% precision on passwords) | 17 PII types, 99.44% accuracy |
+| `gravitee-io/bert-small-pii-detection` | ~30MB | BERT-small | **General PII** | ✅ Yes | Lightweight option for resource-constrained environments |
 
-**⚠️ Models to AVOID for password detection:**
-- `bert-base-NER` - Only detects LOC, ORG, PER, MISC. Does NOT detect passwords
-- `distilbert-base-NER` - Same limitation as bert-base-NER
-- Large conversational models (Llama, Mistral, etc.) - unsuitable for token classification
-- Code generation models - trained for different tasks
+**Model Details:**
+
+**SoelMgd/bert-pii-detection** (Recommended Default)
+- **Architecture**: DistilBERT (fully compatible with transformers.js)
+- **Size**: ~66MB download
+- **Training**: AI4Privacy PII-42k dataset
+- **Categories**: 56 PII types including:
+  - Credentials: PASSWORD, USERNAME, API_KEY, SECRET_KEY
+  - Financial: CREDIT_CARD, BANK_ACCOUNT, SWIFT_BIC
+  - Personal: EMAIL, PHONE_NUMBER, SSN, DATE_OF_BIRTH
+  - Location: ADDRESS, CITY, ZIP_CODE, COUNTRY
+  - Online: IP_ADDRESS, MAC_ADDRESS, URL
+
+**gneeraj/deeppass2-bert**
+- **Architecture**: XLM-RoBERTa (compatible with transformers.js)
+- **Size**: ~560MB download
+- **Training**: Focused on secret detection in code
+- **Best For**: Detecting hardcoded passwords, API keys, tokens in source code
+- **Blog**: [SpecterOps DeepPass2 announcement](https://specterops.io/blog/2025/07/31/whats-your-secret-secret-scanning-by-deeppass2/)
+
+**iiiorg/piiranha-v1-detect-personal-information**
+- **Architecture**: DeBERTa-v3 (supported by transformers.js)
+- **Size**: ~400MB download
+- **Training**: AI4Privacy PII-200k dataset
+- **Categories**: 17 PII types across 6 languages
+- **Accuracy**: 99.44% overall, 100% email accuracy, 98% password precision
+- **Note**: Previously thought incompatible, but DeBERTa IS supported by @xenova/transformers
+
+**gravitee-io/bert-small-pii-detection**
+- **Architecture**: BERT-small (compatible with transformers.js)
+- **Size**: ~30MB download
+- **Training**: Combined multiple PII datasets
+- **Best For**: Resource-constrained environments where speed matters
+
+**⚠️ Models to AVOID:**
+
+| Model | Why Avoid |
+|-------|-----------|
+| `Xenova/bert-base-NER` | **NER model only** - detects PER, ORG, LOC, MISC. Does NOT detect passwords or API keys |
+| `dslim/bert-base-NER` | Same limitation - NER only |
+| `joneauxedgar/pasteproof-pii-detector-v2` | Uses ModernBERT architecture - **NOT supported** by @xenova/transformers |
+| Large conversational models (Llama, Mistral, etc.) | Unsuitable for token classification tasks |
+| Code generation models | Trained for different tasks entirely |
+
+**How to verify a model is PII vs NER:**
+
+Check the model's label list:
+- **PII labels**: PASSWORD, API_KEY, CREDIT_CARD, SSN, EMAIL, SECRET
+- **NER labels**: PER, ORG, LOC, MISC (names, organizations, locations)
+
+Example with SoelMgd/bert-pii-detection:
+```javascript
+const { pipeline } = require('@xenova/transformers');
+
+const detector = await pipeline('token-classification', 'SoelMgd/bert-pii-detection');
+const result = await detector('My password is SuperSecret123!');
+// Detects: "SuperSecret123!" as PASSWORD
+```
 
 **Custom model configuration:**
 ```json
@@ -100,25 +158,11 @@ The local provider uses token classification models. **Important: General NER mo
   "detection": {
     "ai_detection": true,
     "ai_provider": "local",
-    "local_model": "joneauxedgar/pasteproof-pii-detector-v2",
+    "local_model": "SoelMgd/bert-pii-detection",
     "ai_timeout_ms": 500
   }
 }
 ```
-
-**Model details:**
-
-**PasteProof PII Detector** (`joneauxedgar/pasteproof-pii-detector-v2`)
-- Entities: `VUL_JXM` (vulnerable credentials), `EMAIL`, `CREDIT_CARD`, `PHONE_NUM`, etc.
-- Trained on 120k examples with hard negatives (placeholders, test data)
-- Correctly ignores: `process.env.API_KEY`, `123-45-6789` (example SSN), `test@example.com`
-- 97.2% F1 score on validation set
-
-**Piiranha** (`iiiorg/piiranha-v1-detect-personal-information`)
-- Entities: `PASSWORD` (98% precision!), `USERNAME`, `EMAIL`, `CREDITCARDNUMBER`, etc.
-- 17 PII types across 6 languages
-- 99.44% overall classification accuracy
-- Base model: microsoft/mdeberta-v3-base
 
 ### 2. OpenAI
 
@@ -167,121 +211,25 @@ Use your own OpenAI-compatible API endpoint (Ollama, LocalAI, etc.)
     "ai_detection": true,
     "ai_provider": "custom",
     "ai_timeout_ms": 5000,
-    "custom_api_endpoint": "http://localhost:11434/v1/chat/completions",
-    "custom_api_key": "optional-api-key",
-    "custom_model": "llama2"
+    "custom_api_endpoint": "http://localhost:1234/v1",
+    "custom_api_key": "optional-api-key"
   }
 }
 ```
 
-**⚠️ Important: Model Selection for Self-Hosted**
+## Architecture Compatibility
 
-When using Ollama or similar self-hosted solutions, **avoid large conversational models** (7B+ parameters like Llama 2, Mistral, etc.) for detection tasks.
+### Supported by @xenova/transformers:
+- ✅ BERT
+- ✅ DistilBERT
+- ✅ RoBERTa / XLM-RoBERTa
+- ✅ DeBERTa / DeBERTa-v2 / DeBERTa-v3
+- ✅ ELECTRA
+- ✅ MobileBERT
 
-**Why:**
-- Large models may generate explanatory text instead of just returning detections
-- They can be unpredictable with system prompts
-- Higher resource usage without accuracy benefits for this use case
-
-**Recommended for self-hosted:**
-- Use OpenAI-compatible endpoints that wrap smaller NER models
-- Consider LocalAI with `gpt-3.5-turbo` mimicking models
-- For Ollama, test thoroughly with your specific use case before production use
-
-## Configuration Options
-
-Add to your `vibeguard.config.json`:
-
-```json
-{
-  "detection": {
-    "ai_detection": true,
-    "ai_provider": "local",
-    "ai_timeout_ms": 500
-  }
-}
-```
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `ai_detection` | boolean | `false` | Enable AI detection |
-| `ai_provider` | string | `"local"` | Provider: `"local"`, `"openai"`, or `"custom"` |
-| `ai_timeout_ms` | number | `500` | Timeout for AI detection in milliseconds |
-
-### Provider-Specific Options
-
-**OpenAI Provider:**
-- `openai_api_key` - Your OpenAI API key
-- `openai_model` - Model to use (default: `"gpt-4"`)
-
-**Custom Provider:**
-- `custom_api_endpoint` - API endpoint URL
-- `custom_api_key` - API key (if required)
-- `custom_model` - Model name
-
-## How It Works
-
-1. **Regex Detection First**: Traditional patterns detect obvious secrets (emails, API keys with known prefixes)
-2. **AI Detection**: ML model analyzes text contextually for additional secrets
-3. **Result Merging**: Results are merged with conflict resolution (prefers longer matches, then higher confidence)
-4. **Masking**: Detected values are masked using format-preserving algorithms
-
-## Performance Considerations
-
-### Timeout Behavior
-
-AI detection has a configurable timeout (default 500ms). If detection exceeds this:
-- The operation is cancelled
-- Only regex results are used
-- A debug warning is logged (if `OPENCODE_GUARD_DEBUG=1`)
-
-### Recommendation by Use Case
-
-| Use Case | Recommended Provider | Timeout |
-|----------|---------------------|---------|
-| Local development | Local | 1000ms |
-| CI/CD pipelines | Local | 2000ms |
-| High-volume production | OpenAI | 1000ms |
-| Privacy-critical | Local or Custom | 2000ms |
-
-## Privacy Notes
-
-- **Local provider**: No data leaves your machine. Models run locally.
-- **OpenAI provider**: Text is sent to OpenAI's API. Review their privacy policy.
-- **Custom provider**: Depends on your infrastructure. Can be fully private if self-hosted.
-
-## Troubleshooting
-
-### AI detection not working
-
-1. Check if AI detection is enabled in config:
-   ```bash
-   export OPENCODE_GUARD_DEBUG=1
-   ```
-   Look for: `[opencode-guard] AI detection enabled (local)`
-
-2. For local provider, check if `@xenova/transformers` is installed:
-   ```bash
-   npm ls @xenova/transformers
-   ```
-
-3. Check for timeout errors:
-   ```
-   [opencode-guard] AI detection failed: AI detection timeout after 500ms
-   ```
-   Increase `ai_timeout_ms` if needed.
-
-### High latency
-
-- Increase timeout if you can tolerate slower responses
-- Consider using OpenAI provider for better performance
-- Reduce `ai_timeout_ms` to fail faster (only regex detection will be used)
-
-### Memory usage (Local provider)
-
-The local provider loads ML models into memory:
-- First run: Downloads ~100MB model
-- Runtime: Uses ~200-400MB RAM
+### NOT Supported:
+- ❌ ModernBERT
+- ❌ GPT/LLaMA/Mistral (for token classification - different task)
 
 ## Examples
 
@@ -300,8 +248,8 @@ AI detects: `SuperSecret123!`
 Input:
 ```javascript
 const config = {
-  password: "hunter2",
-  apiKey: process.env.KEY
+  password: 'hunter2',
+  apiKey: process.env.API_KEY
 };
 ```
 
@@ -312,8 +260,69 @@ AI detects: `hunter2` as a password
 
 Input:
 ```
-User john.doe@example.com logged in with password "MyP@ssw0rd!" from 192.168.1.1
+User john@example.com logged in with password "MyP@ssw0rd!" from 192.168.1.100
 ```
 
-Regex detects: `john.doe@example.com`, `192.168.1.1`
+Regex detects: `john@example.com`, `192.168.1.100`
 AI detects: `MyP@ssw0rd!` as a password
+
+## Troubleshooting
+
+### Model fails to load
+
+1. Check architecture compatibility - ensure model uses BERT/DistilBERT/RoBERTa/DeBERTa
+2. Verify you're using a PII model, not an NER model:
+   ```javascript
+   // Check model labels
+   const detector = await pipeline('token-classification', 'model-name');
+   console.log(detector.model.config.id2label);
+   // Should show: PASSWORD, API_KEY, etc. (not PER, ORG, LOC)
+   ```
+3. Check internet connection for initial download
+4. Clear cache and retry: `rm -rf ~/.cache/huggingface/hub/`
+
+### Model downloads but doesn't detect passwords
+
+The model is likely an NER model, not a PII model:
+- NER models detect: names, organizations, locations
+- PII models detect: passwords, API keys, credit cards, secrets
+
+Switch to a recommended PII model from the table above.
+
+### "Architecture not supported" error
+
+The model uses an architecture not supported by @xenova/transformers:
+- ❌ ModernBERT (e.g., joneauxedgar/pasteproof-pii-detector-v2)
+- ❌ GPT-style models for token classification
+
+Use models from the recommended list above.
+
+### Timeout errors
+
+```
+[opencode-guard] AI detection failed: AI detection timeout after 500ms
+```
+
+Solutions:
+1. Increase `ai_timeout_ms` (default: 500ms)
+2. Use a smaller model (e.g., gravitee-io/bert-small-pii-detection)
+3. Reduce text length being analyzed
+4. Consider using OpenAI provider for faster inference
+
+### High latency
+
+- Increase timeout if you can tolerate slower responses
+- Consider using OpenAI provider for better performance
+- Reduce `ai_timeout_ms` to fail faster (only regex detection will be used)
+- Use smaller models (30-66MB vs 400-560MB)
+
+### Memory usage (Local provider)
+
+The local provider loads ML models into memory:
+- First run: Downloads model (30-560MB depending on model)
+- Runtime: Uses ~200-600MB RAM depending on model size
+
+**Recommendations:**
+- Low memory environment: Use `gravitee-io/bert-small-pii-detection` (30MB)
+- Balanced: Use `SoelMgd/bert-pii-detection` (66MB)
+- High accuracy: Use `iiiorg/piiranha-v1-detect-personal-information` (400MB)
