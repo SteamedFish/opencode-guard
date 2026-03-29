@@ -3,6 +3,8 @@ import assert from 'node:assert';
 import { parseDuration, loadConfig } from '../src/config.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { writeFile, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,11 +22,25 @@ test('parseDuration returns default for invalid input', () => {
   assert.strictEqual(parseDuration(''), 3600000);
 });
 
-test('loadConfig returns disabled config when no config file found', async () => {
-  const config = await loadConfig('/nonexistent/path');
-  assert.strictEqual(config.enabled, false);
-  assert.strictEqual(config.debug, false);
-  assert.strictEqual(config.loadedFrom, null);
+test('loadConfig returns disabled config when plugin is disabled', async () => {
+  const originalEnv = process.env.OPENCODE_VIBEGUARD_CONFIG;
+  const tempConfig = join(tmpdir(), `vibeguard-test-${Date.now()}.json`);
+  await writeFile(tempConfig, JSON.stringify({ enabled: false }));
+  process.env.OPENCODE_VIBEGUARD_CONFIG = tempConfig;
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.enabled, false);
+    assert.strictEqual(config.debug, false);
+    assert.strictEqual(config.loadedFrom, tempConfig);
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_VIBEGUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_VIBEGUARD_CONFIG;
+    }
+    await unlink(tempConfig).catch(() => {});
+  }
 });
 
 test('loadConfig loads config from project root', async () => {
