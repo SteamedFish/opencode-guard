@@ -47,6 +47,37 @@ OpenCode Guard is a privacy-focused plugin for [OpenCode](https://opencode.ai) t
 | Password | `password=secret` | `password=********` | Mask value |
 | Username | `username=admin` | `username=********` | Mask value |
 
+## AI Detection (Optional)
+
+OpenCode Guard includes optional AI-powered detection that can identify sensitive data that regex patterns might miss:
+
+- Passwords mentioned in natural language
+- Secrets embedded in code comments
+- Context-dependent credentials
+
+### Quick Start
+
+```bash
+# Install optional AI dependency
+npm install @xenova/transformers
+
+# Enable in your config
+{
+  "detection": {
+    "ai_detection": true,
+    "ai_provider": "local",
+    "ai_timeout_ms": 500
+  }
+}
+```
+
+Three provider options available:
+- **Local** (default): On-device inference with Transformers.js - private and free
+- **OpenAI**: Cloud-based with GPT-4 - highest accuracy
+- **Custom**: Self-hosted endpoints (Ollama, LocalAI, etc.)
+
+See [docs/AI_DETECTION.md](docs/AI_DETECTION.md) for detailed configuration.
+
 ## Installation
 
 ### Method 1: NPM Package (Recommended)
