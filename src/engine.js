@@ -23,25 +23,33 @@ export async function redactText(text, patterns, session) {
   return { text: result, count };
 }
 
-export async function redactDeep(value, patterns, session) {
+export async function redactDeep(value, patterns, session, visited = new WeakSet()) {
   if (typeof value === 'string') {
     const result = await redactText(value, patterns, session);
     return result.text;
   }
-  
+
   if (Array.isArray(value)) {
+    if (visited.has(value)) {
+      return value;
+    }
+    visited.add(value);
     for (let i = 0; i < value.length; i++) {
-      value[i] = await redactDeep(value[i], patterns, session);
+      value[i] = await redactDeep(value[i], patterns, session, visited);
     }
     return value;
   }
-  
+
   if (value && typeof value === 'object') {
+    if (visited.has(value)) {
+      return value;
+    }
+    visited.add(value);
     for (const key of Object.keys(value)) {
-      value[key] = await redactDeep(value[key], patterns, session);
+      value[key] = await redactDeep(value[key], patterns, session, visited);
     }
     return value;
   }
-  
+
   return value;
 }

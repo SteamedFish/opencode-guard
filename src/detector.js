@@ -1,14 +1,26 @@
 export async function detectSensitiveData(text, patterns, options = {}) {
+  if (typeof text !== 'string' || !text) {
+    return [];
+  }
+
   const results = [];
   const seen = new Set();
   
   for (const rule of (patterns.regex || [])) {
     const regex = new RegExp(rule.regex.source, rule.regex.flags);
     let match;
+    let lastIndex = -1;
     while ((match = regex.exec(text)) !== null) {
       const matchedText = match[0];
+
+      if (match.index === lastIndex) {
+        regex.lastIndex++;
+        continue;
+      }
+      lastIndex = match.index;
+
       if (patterns.exclude?.has(matchedText)) continue;
-      
+
       const key = `${match.index}-${match.index + matchedText.length}`;
       if (!seen.has(key)) {
         seen.add(key);
