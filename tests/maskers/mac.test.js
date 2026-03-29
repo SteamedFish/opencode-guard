@@ -62,37 +62,3 @@ test('maskMACAddress produces different results for different MACs', () => {
   assert.ok(result1.startsWith('aa:bb:cc:'), 'Result 1 should preserve prefix aa:bb:cc');
   assert.ok(result2.startsWith('aa:bb:cc:'), 'Result 2 should preserve prefix aa:bb:cc');
 });
-
-test('maskMACAddress handles hyphen format', () => {
-  const rng = () => 0.5;
-  const result = maskMACAddress('aa-bb-cc-dd-ee-ff', rng);
-  
-  // Should preserve first 3 bytes (aa:bb:cc)
-  assert.ok(result.startsWith('aa:bb:cc:'), `Expected prefix aa:bb:cc but got ${result}`);
-});
-
-test('maskMACAddress handles compact format', () => {
-  const rng = () => 0.5;
-  const result = maskMACAddress('AABBCCDDEEFF', rng);
-  
-  // Should preserve first 3 bytes (aa:bb:cc)
-  assert.ok(result.startsWith('aa:bb:cc:'), `Expected prefix aa:bb:cc but got ${result}`);
-});
-
-test('maskMACAddress is deterministic with same seed', () => {
-  const rng = () => 0.3;
-  const result1 = maskMACAddress('aa:bb:cc:dd:ee:ff', rng);
-  const result2 = maskMACAddress('aa:bb:cc:dd:ee:ff', rng);
-  
-  assert.strictEqual(result1, result2);
-});
-
-test('maskMACAddress produces different results for different MACs', () => {
-  const rng = (min, max) => min + (max - min) * 0.3;
-  const result1 = maskMACAddress('aa:bb:cc:dd:ee:ff', rng);
-  const result2 = maskMACAddress('aa:bb:cc:11:22:33', rng);
-  
-  // Same prefix, different suffixes masked
-  assert.ok(result1.startsWith('aa:bb:cc:'));
-  assert.ok(result2.startsWith('aa:bb:cc:'));
-});

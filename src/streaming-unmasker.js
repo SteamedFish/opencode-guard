@@ -2,7 +2,9 @@ export class StreamingUnmasker {
   constructor(session, options = {}) {
     this.session = session;
     this.maxMaskedLength = options.maxMaskedLength || 128;
-    this.maskedPattern = options.maskedPattern || /msk-[a-z0-9]{16,64}/g;
+    // Generic pattern that catches most masked tokens (API keys, emails, IPs, etc.)
+    // This matches: sk-xxx, ghp_xxx, AWS keys, and email addresses
+    this.maskedPattern = options.maskedPattern || /(?:sk-|ghp_|gho_|ghu_|ghs_|ghr_|AKIA|ASIA)[A-Za-z0-9_-]+|(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}|:(?::[0-9a-fA-F]{1,4}){1,7}|::|[^\s@]+@[^\s@]+\.[^\s@]+/g;
     this.buffer = '';
     this.closed = false;
   }
@@ -47,7 +49,8 @@ export class StreamingUnmasker {
       return output;
     }
 
-    const partialMatchStart = this.buffer.search(/msk-[a-z0-9]*$/);
+    // Check for partial token at end of buffer (could be split across chunks)
+    const partialMatchStart = this.buffer.search(/(?:sk-|ghp_|gho_|ghu_|ghs_|ghr_|AKIA|ASIA)[A-Za-z0-9_-]*$|\d{1,3}(?:\.\d{1,3})*\.?$|(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{0,4}:?$|[^\s@]+@[^\s@]*\.?[^\s@]*$/);
     const hasPartialMatch = partialMatchStart >= 0 && this.buffer.slice(partialMatchStart).length < this.maxMaskedLength;
 
     if (hasPartialMatch) {

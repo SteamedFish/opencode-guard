@@ -1,4 +1,4 @@
-import { sanitizeCategory } from '../src/utils.js';
+import { sanitizeCategory } from './utils.js';
 
 const BUILTIN = new Map([
   ['email', { pattern: String.raw`[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}`, flags: 'i', category: 'EMAIL', maskAs: 'email' }],
@@ -7,6 +7,7 @@ const BUILTIN = new Map([
   ['china_id', { pattern: String.raw`(?<!\d)\d{17}[\dXx](?!\d)`, flags: '', category: 'CHINA_ID', maskAs: 'pattern' }],
   ['uuid', { pattern: String.raw`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}`, flags: '', category: 'UUID', maskAs: 'uuid' }],
   ['ipv4', { pattern: String.raw`(?:\d{1,3}\.){3}\d{1,3}`, flags: '', category: 'IPV4', maskAs: 'ipv4' }],
+  ['ipv6', { pattern: String.raw`(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}|:(?::[0-9a-fA-F]{1,4}){1,7}|::`, flags: 'i', category: 'IPV6', maskAs: 'ipv6' }],
   ['mac', { pattern: String.raw`(?:[0-9a-f]{2}:){5}[0-9a-f]{2}`, flags: 'i', category: 'MAC', maskAs: 'mac_address' }],
   ['basic_auth_url', { pattern: String.raw`https?:\/\/[^:]+:[^@]+@[^\s]+`, flags: 'i', category: 'BASIC_AUTH_URL', maskAs: 'basic_auth_url' }],
   ['basic_auth_header', { pattern: String.raw`Basic\s+[A-Za-z0-9+/]{20,}=*`, flags: 'i', category: 'BASIC_AUTH_HEADER', maskAs: 'basic_auth_header' }],
