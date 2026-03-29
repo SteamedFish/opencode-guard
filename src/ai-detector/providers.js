@@ -3,6 +3,11 @@
  * Supports: local (Transformers.js), openai, custom
  */
 
+// Import provider implementations first (before they're used in createAIProvider)
+import { LocalAIProvider } from './providers/local.js';
+import { OpenAIProvider } from './providers/openai.js';
+import { CustomAIProvider } from './providers/custom.js';
+
 export class AIProvider {
   constructor(config = {}) {
     this.config = config;
@@ -45,7 +50,4 @@ export function createAIProvider(provider, config = {}) {
   }
 }
 
-// Provider implementations in separate tasks
-export { LocalAIProvider } from './providers/local.js';
-export { OpenAIProvider } from './providers/openai.js';
-export { CustomAIProvider } from './providers/custom.js';
+export { LocalAIProvider, OpenAIProvider, CustomAIProvider };
