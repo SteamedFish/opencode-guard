@@ -117,5 +117,4 @@ export {
   createCustomMasker,
   CustomMaskerRegistry,
   customRegistry,
-  initializeCustomMaskers,
 };
