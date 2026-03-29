@@ -47,6 +47,40 @@ npm install @xenova/transformers
 }
 ```
 
+#### Recommended Local Models
+
+The local provider uses token classification models for Named Entity Recognition (NER). **Note: Smaller, focused models often outperform larger ones for this specific task.**
+
+**Why smaller models work better:**
+- Large language models (7B+ parameters) may "overthink" and try to interpret the content instead of just identifying sensitive patterns
+- They might attempt to "help" by generating additional text or explanations
+- Smaller NER models are trained specifically for entity extraction, making them more predictable
+
+**Recommended models:**
+
+| Model | Size | Best For | Notes |
+|-------|------|----------|-------|
+| `Xenova/bert-base-NER` | ~100MB | General purpose | Default. Good balance of speed and accuracy |
+| `Xenova/distilbert-base-NER` | ~60MB | Speed priority | Faster, slightly less accurate |
+| `dslim/bert-base-NER` | ~100MB | Production use | HuggingFace standard for NER |
+
+**Models to avoid:**
+- Large conversational models (Llama, Mistral, etc.) - unsuitable for token classification
+- Code generation models - trained for different tasks
+- Multimodal models - unnecessary overhead
+
+**Custom model configuration:**
+```json
+{
+  "detection": {
+    "ai_detection": true,
+    "ai_provider": "local",
+    "local_model": "Xenova/distilbert-base-NER",
+    "ai_timeout_ms": 500
+  }
+}
+```
+
 ### 2. OpenAI
 
 Uses OpenAI's GPT-4 for high-accuracy detection.
@@ -95,11 +129,25 @@ Use your own OpenAI-compatible API endpoint (Ollama, LocalAI, etc.)
     "ai_provider": "custom",
     "ai_timeout_ms": 5000,
     "custom_api_endpoint": "http://localhost:11434/v1/chat/completions",
-    "custom_api_key": "your-key-or-empty",
+    "custom_api_key": "optional-api-key",
     "custom_model": "llama2"
   }
 }
 ```
+
+**⚠️ Important: Model Selection for Self-Hosted**
+
+When using Ollama or similar self-hosted solutions, **avoid large conversational models** (7B+ parameters like Llama 2, Mistral, etc.) for detection tasks.
+
+**Why:**
+- Large models may generate explanatory text instead of just returning detections
+- They can be unpredictable with system prompts
+- Higher resource usage without accuracy benefits for this use case
+
+**Recommended for self-hosted:**
+- Use OpenAI-compatible endpoints that wrap smaller NER models
+- Consider LocalAI with `gpt-3.5-turbo` mimicking models
+- For Ollama, test thoroughly with your specific use case before production use
 
 ## Configuration Options
 
