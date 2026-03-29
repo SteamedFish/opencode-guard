@@ -65,6 +65,8 @@ npm install opencode-guard
 }
 ```
 
+**⚠️ 安装后，你必须创建配置文件**（详见下方的[配置](#配置)部分）。默认情况下插件在未配置时会被禁用。
+
 ### 方法二：本地开发
 
 1. 克隆本仓库：
@@ -84,23 +86,52 @@ git clone https://github.com/SteamedFish/opencode-guard.git
 
 ## 配置
 
+> ⚠️ **重要提示：没有配置文件时插件默认禁用！**
+>
+> 出于安全考虑，插件需要**同时满足**：
+> 1. 配置文件必须存在
+> 2. `enabled: true` 和 `global_salt` 必须设置
+>
+> 如果找不到配置文件，或缺少这些值，插件将静默不执行任何操作。
+> 使用 `OPENCODE_GUARD_DEBUG=1` 可查看调试信息。
+
 ### 快速设置
 
-在以下任一位置创建 `vibeguard.config.json` 文件：
+**你必须创建 `vibeguard.config.json` 文件**在以下任一位置：
 
 **方案 1：全局配置（推荐）**
+
+首先，生成一个安全的盐值（选择以下任一方法）：
+
+```bash
+# 方法 1：OpenSSL（推荐）
+openssl rand -base64 32
+
+# 方法 2：/dev/urandom
+head -c 32 /dev/urandom | base64
+
+# 方法 3：Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+然后创建配置文件：
+
 ```bash
 mkdir -p ~/.config/opencode
 cat > ~/.config/opencode/vibeguard.config.json << 'EOF'
 {
   "enabled": true,
-  "global_salt": "your-secret-salt-change-this"
+  "global_salt": "YOUR_GENERATED_SALT_HERE"
 }
 EOF
 ```
 
+> 💡 **安全提示**：使用长且随机的盐值（至少 32 字节）。像对待密码一样对待它——不要分享或提交到版本控制。
+
 **方案 2：项目特定配置**
 在与 `opencode.json` 相同的目录（你的 OpenCode 项目根目录）创建 `vibeguard.config.json`。
+
+> **注意**：插件不能开箱即用。`global_salt` 是确定性脱敏所必需的，必须由你自行提供。
 
 ### 完整示例
 
@@ -144,9 +175,9 @@ EOF
 
 | 选项 | 描述 | 默认值 |
 |-----|------|--------|
-| `enabled` | 启用/禁用插件 | `true` |
+| `enabled` | 启用/禁用插件。**注意：** 如果没有配置文件，插件将被禁用 | `true`（配置文件存在时） |
 | `debug` | 启用调试日志 | `false` |
-| `global_salt` | 确定性脱敏的密钥盐值 | （必填） |
+| `global_salt` | **必填。** 确定性脱敏的密钥盐值。没有此项插件无法工作 | （无 — 必须设置） |
 | `session_ttl` | 会话超时（如 "1h", "30m"） | `"1h"` |
 | `max_mappings` | 每会话最大缓存映射数 | `100000` |
 | `detection.parallel` | 正则和 AI 检测并行运行 | `true` |
@@ -218,9 +249,44 @@ EOF
 }
 ```
 
+## 故障排查
+
+### 插件没有进行脱敏
+
+**症状**：敏感数据（邮箱、API 密钥等）被直接发送给 LLM 提供商，没有经过脱敏处理。
+
+**常见原因**：
+1. **找不到配置文件**：插件需要配置文件才能工作。请参阅[配置](#配置)部分。
+2. **缺少 `global_salt`**：没有设置 `global_salt` 插件将无法工作。
+3. **`enabled: false`**：确保配置中的 `enabled` 设置为 `true`。
+
+**调试步骤**：
+```bash
+# 启用调试日志以查看发生了什么
+export OPENCODE_GUARD_DEBUG=1
+opencode
+```
+
+留意以下消息：
+- `[opencode-guard] config: not found (plugin disabled)` — 缺少配置文件
+- `[opencode-guard] config: /path/to/config, enabled=false` — 配置中禁用了插件
+- `[opencode-guard] masked N sensitive values` — 正常工作
+
+**验证配置文件位置**：
+```bash
+# 检查配置文件是否存在于预期位置
+ls -la ~/.config/opencode/vibeguard.config.json
+ls -la ./vibeguard.config.json
+ls -la ./.opencode/vibeguard.config.json
+```
+
 ## 安全说明
 
 1. **全局盐值**：`global_salt` 是确定性脱敏的关键。请妥善保管并保持不变。
+   - 使用加密安全的方法生成（OpenSSL、`/dev/urandom` 或 Node.js `crypto.randomBytes`）
+   - 使用至少 32 字节的熵
+   - 切勿将盐值提交到版本控制
+   - 备份你的盐值——丢失它意味着你无法恢复之前脱敏的值
 2. **无持久化存储**：所有映射仅存储在内存中。插件重启 = 全新会话。
 3. **格式合规**：脱敏值保持有效格式（邮箱通过邮箱正则验证，IP 是有效地址等）。
 4. **加密安全**：使用 HMAC-SHA256 进行种子生成。没有盐值无法逆向还原。

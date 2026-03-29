@@ -66,6 +66,8 @@ Add to your `opencode.json`:
 }
 ```
 
+**⚠️ After installation, you MUST create a config file** (see [Configuration](#configuration) below). The plugin is disabled by default until configured.
+
 ### Method 2: Local Development
 
 1. Clone this repository:
@@ -85,23 +87,52 @@ git clone https://github.com/SteamedFish/opencode-guard.git
 
 ## Configuration
 
+> ⚠️ **IMPORTANT: Plugin is DISABLED by default without configuration!**
+>
+> For security reasons, the plugin requires **both**:
+> 1. A configuration file to exist
+> 2. `enabled: true` and `global_salt` to be set
+>
+> If no config file is found, or if these values are missing, the plugin will silently do nothing.
+> Use `OPENCODE_GUARD_DEBUG=1` to see what's happening.
+
 ### Quick Setup
 
-Create a `vibeguard.config.json` file in one of these locations:
+**You MUST create a `vibeguard.config.json` file** in one of these locations:
 
 **Option 1: Global Config (Recommended)**
+
+First, generate a secure salt (choose one method):
+
+```bash
+# Method 1: OpenSSL (recommended)
+openssl rand -base64 32
+
+# Method 2: /dev/urandom
+head -c 32 /dev/urandom | base64
+
+# Method 3: Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Then create the config file:
+
 ```bash
 mkdir -p ~/.config/opencode
 cat > ~/.config/opencode/vibeguard.config.json << 'EOF'
 {
   "enabled": true,
-  "global_salt": "your-secret-salt-change-this"
+  "global_salt": "YOUR_GENERATED_SALT_HERE"
 }
 EOF
 ```
 
+> 💡 **Security tip**: Use a long, random salt (at least 32 bytes). Treat it like a password - don't share it or commit it to version control.
+
 **Option 2: Project-Specific Config**
 Create `vibeguard.config.json` in the same directory as your `opencode.json` (your OpenCode project root).
+
+> **Note**: The plugin does NOT work out-of-the-box. The `global_salt` is required for deterministic masking and must be provided by you.
 
 ### Full Example
 
@@ -145,9 +176,9 @@ Create `vibeguard.config.json` in the same directory as your `opencode.json` (yo
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `enabled` | Enable/disable the plugin | `true` |
+| `enabled` | Enable/disable the plugin. **Note:** Plugin is disabled if no config file exists | `true` (when config present) |
 | `debug` | Enable debug logging | `false` |
-| `global_salt` | Secret salt for deterministic masking | (required) |
+| `global_salt` | **Required.** Secret salt for deterministic masking. Plugin won't work without this | (none — must be set) |
 | `session_ttl` | Session timeout (e.g., "1h", "30m") | `"1h"` |
 | `max_mappings` | Maximum cached mappings per session | `100000` |
 | `detection.parallel` | Run regex and AI detection in parallel | `true` |
@@ -219,9 +250,44 @@ Define custom masking behavior:
 }
 ```
 
+## Troubleshooting
+
+### Plugin is not masking anything
+
+**Symptom**: Sensitive data (emails, API keys) are being sent to LLM providers without masking.
+
+**Common causes**:
+1. **No config file found**: The plugin requires a config file to work. Check the [Configuration](#configuration) section.
+2. **`global_salt` missing**: The plugin won't work without `global_salt` set.
+3. **`enabled: false`**: Make sure `enabled` is set to `true` in your config.
+
+**Debug steps**:
+```bash
+# Enable debug logging to see what's happening
+export OPENCODE_GUARD_DEBUG=1
+opencode
+```
+
+Look for messages like:
+- `[opencode-guard] config: not found (plugin disabled)` — Config file missing
+- `[opencode-guard] config: /path/to/config, enabled=false` — Plugin disabled in config
+- `[opencode-guard] masked N sensitive values` — Working correctly
+
+**Verify config location**:
+```bash
+# Check if config exists in one of the expected locations
+ls -la ~/.config/opencode/vibeguard.config.json
+ls -la ./vibeguard.config.json
+ls -la ./.opencode/vibeguard.config.json
+```
+
 ## Security Notes
 
 1. **Global Salt**: The `global_salt` is the key to deterministic masking. Keep it secret and consistent.
+   - Generate using cryptographically secure methods (OpenSSL, `/dev/urandom`, or Node.js `crypto.randomBytes`)
+   - Use at least 32 bytes of entropy
+   - Never commit the salt to version control
+   - Backup your salt - losing it means you cannot restore previously masked values
 2. **No Persistent Storage**: All mappings are stored in memory only. Plugin restart = fresh sessions.
 3. **Format Compliance**: Masked values maintain valid format (emails pass email regex, IPs are valid, etc.)
 4. **Cryptographic Security**: Uses HMAC-SHA256 for seed generation. Irreversible without the salt.
