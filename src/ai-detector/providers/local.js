@@ -1,19 +1,24 @@
 import { AIProvider } from './base.js';
+import { ensurePackage } from '../auto-install.js';
+
+const PACKAGE_NAME = '@xenova/transformers';
 
 export class LocalAIProvider extends AIProvider {
   constructor(config = {}) {
     super(config);
     this.pipeline = null;
-    // Default to PII-specific model instead of general NER or sentiment model
     this.modelName = config.model || 'joneauxedgar/pasteproof-pii-detector-v2';
+    this.autoInstall = config.autoInstallDeps || false;
     this.initialized = false;
+    this.installAttempted = false;
   }
 
   async isAvailable() {
     try {
-      await import('@xenova/transformers');
+      await import(PACKAGE_NAME);
       return true;
     } catch {
+      // Package not installed
       return false;
     }
   }
@@ -21,8 +26,23 @@ export class LocalAIProvider extends AIProvider {
   async initialize() {
     if (this.initialized) return;
     
+    // Try to ensure package is available (with auto-install if enabled)
+    const packageAvailable = await ensurePackage(PACKAGE_NAME, {
+      autoInstall: this.autoInstall && !this.installAttempted
+    });
+    
+    this.installAttempted = true;
+    
+    if (!packageAvailable) {
+      throw new Error(
+        `${PACKAGE_NAME} is not installed. ` +
+        `Install it with: npm install ${PACKAGE_NAME}\n` +
+        `Or enable auto_install_deps in your config.`
+      );
+    }
+    
     try {
-      const { pipeline } = await import('@xenova/transformers');
+      const { pipeline } = await import(PACKAGE_NAME);
       this.pipeline = await pipeline(
         'token-classification',
         this.modelName,
@@ -58,10 +78,7 @@ export class LocalAIProvider extends AIProvider {
   }
 
   _mapEntityType(hfType) {
-    // Map HuggingFace entity types to our standardized types
-    // Supports both PII-specific models (PasteProof, Piiranha) and general NER models
     const typeMap = {
-      // General NER models
       'B-PER': 'PERSON', 'I-PER': 'PERSON',
       'B-ORG': 'ORGANIZATION', 'I-ORG': 'ORGANIZATION',
       'B-LOC': 'LOCATION', 'I-LOC': 'LOCATION',
@@ -69,7 +86,7 @@ export class LocalAIProvider extends AIProvider {
       'PER': 'PERSON', 'ORG': 'ORGANIZATION',
       'LOC': 'LOCATION', 'MISC': 'MISC',
       
-      // PasteProof PII Detector (joneauxedgar/pasteproof-pii-detector-v2)
+      // PasteProof PII Detector
       'B-VUL_JXM': 'CREDENTIAL', 'I-VUL_JXM': 'CREDENTIAL',
       'VUL_JXM': 'CREDENTIAL',
       'B-EMAIL': 'EMAIL', 'I-EMAIL': 'EMAIL',
@@ -83,7 +100,7 @@ export class LocalAIProvider extends AIProvider {
       'B-API_KEY': 'API_KEY', 'I-API_KEY': 'API_KEY',
       'API_KEY': 'API_KEY',
       
-      // Piiranha (iiiorg/piiranha-v1-detect-personal-information)
+      // Piiranha
       'B-PASSWORD': 'PASSWORD', 'I-PASSWORD': 'PASSWORD',
       'PASSWORD': 'PASSWORD',
       'B-USERNAME': 'USERNAME', 'I-USERNAME': 'USERNAME',

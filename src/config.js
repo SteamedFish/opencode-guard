@@ -71,6 +71,8 @@ export async function loadConfig(projectRoot) {
       aiDetection: Boolean(raw.detection?.ai_detection ?? false),
       aiProvider: String(raw.detection?.ai_provider || 'local'),
       aiTimeoutMs: Number(raw.detection?.ai_timeout_ms || 500),
+      autoInstallDeps: Boolean(raw.detection?.auto_install_deps ?? false),
+      localModel: String(raw.detection?.local_model || ''),
     },
     excludeLlmEndpoints: Array.isArray(raw.exclude_llm_endpoints) ? raw.exclude_llm_endpoints : [],
     excludeMcpServers: Array.isArray(raw.exclude_mcp_servers) ? raw.exclude_mcp_servers : [],

@@ -39,9 +39,14 @@ export const OpenCodeGuard = async (ctx) => {
     aiDetector = new AIDetector({
       provider: config.detection.aiProvider,
       timeoutMs: config.detection.aiTimeoutMs,
+      autoInstallDeps: config.detection.autoInstallDeps,
+      localModel: config.detection.localModel,
     });
     if (debug) {
       console.log(`[opencode-guard] AI detection enabled (${config.detection.aiProvider})`);
+      if (config.detection.autoInstallDeps) {
+        console.log(`[opencode-guard] Auto-install enabled for AI dependencies`);
+      }
     }
   }
 

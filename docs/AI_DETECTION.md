@@ -32,8 +32,22 @@ Uses `@xenova/transformers` for on-device inference. No data leaves your machine
 - Lower accuracy than GPT-4
 
 **Setup:**
+
+Option 1 - Manual installation:
 ```bash
 npm install @xenova/transformers
+```
+
+Option 2 - Auto-installation (automatically installs package on first use):
+```json
+{
+  "detection": {
+    "ai_detection": true,
+    "ai_provider": "local",
+    "auto_install_deps": true,
+    "ai_timeout_ms": 500
+  }
+}
 ```
 
 **Configuration:**
@@ -42,32 +56,43 @@ npm install @xenova/transformers
   "detection": {
     "ai_detection": true,
     "ai_provider": "local",
+    "local_model": "joneauxedgar/pasteproof-pii-detector-v2",
+    "auto_install_deps": false,
     "ai_timeout_ms": 500
   }
 }
 ```
 
+**Model Downloads:**
+
+The first time you use a local model, it will be automatically downloaded and cached:
+- **Location**: `~/.cache/huggingface/hub/` (can be changed via `HF_HOME` environment variable)
+- **Size**: ~100MB per model
+- **Offline use**: Once downloaded, models work offline
+- **Cleanup**: Delete the cache directory to remove models
+
 #### Recommended Local Models
 
-The local provider uses token classification models for Named Entity Recognition (NER). **Note: Smaller, focused models often outperform larger ones for this specific task.**
+The local provider uses token classification models. **Important: General NER models (like bert-base-NER) are NOT suitable for detecting passwords and secrets** - they're trained to recognize locations, organizations, and persons, not credentials.
 
 **Why smaller models work better:**
-- Large language models (7B+ parameters) may "overthink" and try to interpret the content instead of just identifying sensitive patterns
-- They might attempt to "help" by generating additional text or explanations
-- Smaller NER models are trained specifically for entity extraction, making them more predictable
+- Large language models (7B+ parameters) may "overthink" and try to interpret content instead of just identifying patterns
+- They might generate explanatory text or "help" in unexpected ways
+- Smaller, task-specific models are trained for exactly one job: detecting sensitive data
 
-**Recommended models:**
+**Recommended PII-specific models:**
 
-| Model | Size | Best For | Notes |
-|-------|------|----------|-------|
-| `Xenova/bert-base-NER` | ~100MB | General purpose | Default. Good balance of speed and accuracy |
-| `Xenova/distilbert-base-NER` | ~60MB | Speed priority | Faster, slightly less accurate |
-| `dslim/bert-base-NER` | ~100MB | Production use | HuggingFace standard for NER |
+| Model | Size | Best For | Password Detection | Notes |
+|-------|------|----------|-------------------|-------|
+| `joneauxedgar/pasteproof-pii-detector-v2` | ~100MB | **Passwords, secrets, API keys** | ✅ Yes (VUL_JXM) | **Recommended default**. 97.2% F1, ignores test data like `process.env.API_KEY` |
+| `iiiorg/piiranha-v1-detect-personal-information` | ~400MB | **PII-heavy content** | ✅ Yes (98% precision) | Detects 17 PII types. 100% email accuracy |
+| `dslim/bert-base-NER` | ~100MB | Names, organizations, locations | ❌ No | Only for general NER, NOT for passwords |
 
-**Models to avoid:**
+**⚠️ Models to AVOID for password detection:**
+- `bert-base-NER` - Only detects LOC, ORG, PER, MISC. Does NOT detect passwords
+- `distilbert-base-NER` - Same limitation as bert-base-NER
 - Large conversational models (Llama, Mistral, etc.) - unsuitable for token classification
 - Code generation models - trained for different tasks
-- Multimodal models - unnecessary overhead
 
 **Custom model configuration:**
 ```json
@@ -75,11 +100,25 @@ The local provider uses token classification models for Named Entity Recognition
   "detection": {
     "ai_detection": true,
     "ai_provider": "local",
-    "local_model": "Xenova/distilbert-base-NER",
+    "local_model": "joneauxedgar/pasteproof-pii-detector-v2",
     "ai_timeout_ms": 500
   }
 }
 ```
+
+**Model details:**
+
+**PasteProof PII Detector** (`joneauxedgar/pasteproof-pii-detector-v2`)
+- Entities: `VUL_JXM` (vulnerable credentials), `EMAIL`, `CREDIT_CARD`, `PHONE_NUM`, etc.
+- Trained on 120k examples with hard negatives (placeholders, test data)
+- Correctly ignores: `process.env.API_KEY`, `123-45-6789` (example SSN), `test@example.com`
+- 97.2% F1 score on validation set
+
+**Piiranha** (`iiiorg/piiranha-v1-detect-personal-information`)
+- Entities: `PASSWORD` (98% precision!), `USERNAME`, `EMAIL`, `CREDITCARDNUMBER`, etc.
+- 17 PII types across 6 languages
+- 99.44% overall classification accuracy
+- Base model: microsoft/mdeberta-v3-base
 
 ### 2. OpenAI
 

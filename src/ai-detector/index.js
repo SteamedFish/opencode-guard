@@ -1,29 +1,37 @@
 import { createAIProvider } from './providers.js';
 import { mergeResults } from './merge.js';
 
-/**
- * AI-powered sensitive data detector
- * Analyzes text contextually to find secrets regex cannot catch
- */
 export class AIDetector {
   constructor(config = {}) {
     this.config = {
-      provider: config.aiProvider || 'local',
-      timeoutMs: config.aiTimeoutMs || 500,
+      provider: config.provider || 'local',
+      timeoutMs: config.timeoutMs || 500,
+      autoInstallDeps: config.autoInstallDeps || false,
+      localModel: config.localModel || '',
       ...config,
     };
     this.provider = null;
     this.initialized = false;
   }
 
-  /**
-   * Initialize the AI provider
-   */
   async initialize() {
     if (this.initialized) return;
     
     try {
       this.provider = createAIProvider(this.config.provider, this.config);
+      
+      // Check if provider is available (for local provider, this may trigger auto-install)
+      const available = await this.provider.isAvailable();
+      if (!available && this.config.provider === 'local') {
+        // Try to initialize which may trigger auto-install
+        try {
+          await this.provider.initialize();
+        } catch (err) {
+          console.warn(`[opencode-guard] AI provider not available: ${err.message}`);
+          this.provider = null;
+        }
+      }
+      
       this.initialized = true;
     } catch (err) {
       console.warn(`[opencode-guard] Failed to initialize AI provider: ${err.message}`);
@@ -31,25 +39,24 @@ export class AIDetector {
     }
   }
 
-  /**
-   * Detect sensitive data in text using AI
-   * @param {string} text
-   * @returns {Promise<Array<{start: number, end: number, text: string, category: string, maskAs: string, confidence: number}>>}
-   */
   async detect(text) {
     if (!this.initialized) {
       await this.initialize();
     }
 
-    if (!this.provider || !this.provider.isAvailable()) {
+    if (!this.provider) {
       return [];
     }
 
     try {
       const results = await this._detectWithTimeout(text);
       return results.map(r => ({
-        ...r,
-        maskAs: this._getMaskerForCategory(r.category),
+        start: r.start,
+        end: r.end,
+        text: r.value,
+        category: r.type,
+        confidence: r.confidence,
+        maskAs: this._getMaskerForCategory(r.type),
       }));
     } catch (err) {
       if (process.env.OPENCODE_GUARD_DEBUG) {
@@ -65,7 +72,7 @@ export class AIDetector {
         reject(new Error(`AI detection timeout after ${this.config.timeoutMs}ms`));
       }, this.config.timeoutMs);
 
-      this.provider.analyze(text)
+      this.provider.detect(text)
         .then(results => {
           clearTimeout(timeout);
           resolve(results);
@@ -91,12 +98,6 @@ export class AIDetector {
   }
 }
 
-/**
- * Convenience function for one-shot detection
- * @param {string} text
- * @param {Object} config
- * @returns {Promise<Array>}
- */
 export async function detectWithAI(text, config = {}) {
   const detector = new AIDetector(config);
   return detector.detect(text);

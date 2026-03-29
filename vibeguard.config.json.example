@@ -13,7 +13,9 @@
     "parallel": true,
     "ai_detection": false,
     "ai_provider": "local",
-    "ai_timeout_ms": 500
+    "ai_timeout_ms": 500,
+    "auto_install_deps": false,
+    "local_model": "joneauxedgar/pasteproof-pii-detector-v2"
   },
   "exclude_llm_endpoints": [],
   "exclude_mcp_servers": [],
