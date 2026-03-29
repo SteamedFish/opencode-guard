@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Worktrees
+.worktrees/
+worktrees/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
