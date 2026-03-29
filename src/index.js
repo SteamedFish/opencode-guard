@@ -5,6 +5,17 @@ import { redactText, redactDeep } from './engine.js';
 import { restoreText, restoreDeep } from './restore.js';
 import { initializeCustomMaskers } from './maskers/index.js';
 
+/**
+ * OpenCode Guard Plugin
+ *
+ * Privacy-focused plugin for OpenCode that automatically masks sensitive data
+ * before it reaches LLM providers and MCP servers. Uses format-preserving masking
+ * to maintain realistic-looking values.
+ *
+ * @param {Object} ctx - OpenCode context
+ * @param {string} ctx.directory - Project directory path
+ * @returns {Object} Plugin hooks
+ */
 export const OpenCodeGuard = async (ctx) => {
   const config = await loadConfig(ctx.directory);
   const debug = Boolean(process.env.OPENCODE_GUARD_DEBUG) || config.debug;
