@@ -127,14 +127,17 @@ export const OpenCodeGuard = async (ctx) => {
 
       const sessionID = msgs[0]?.info?.sessionID ?? msgs[0]?.parts?.[0]?.sessionID;
       const endpoint = msgs[0]?.info?.endpoint;
-      
+
       if (isExcludedEndpoint(endpoint)) {
         if (debug) console.log(`[opencode-guard] skipping excluded endpoint: ${endpoint}`);
         return;
       }
-      
+
       const session = getSession(sessionID);
-      if (!session) return;
+      if (!session) {
+        if (debug) console.log(`[opencode-guard] chat.transform: no session for ${sessionID}`);
+        return;
+      }
 
       let changedCount = 0;
 
@@ -146,8 +149,10 @@ export const OpenCodeGuard = async (ctx) => {
           if (part.type === 'text' || part.type === 'reasoning') {
             if (!part.text || typeof part.text !== 'string') continue;
             if (part.ignored) continue;
+            if (debug) console.log(`[opencode-guard] chat.transform: checking text: "${part.text.substring(0, 100)}${part.text.length > 100 ? '...' : ''}"`);
             const result = await redactText(part.text, patterns, session, aiDetector);
             if (result.count > 0) {
+              if (debug) console.log(`[opencode-guard] chat.transform: masked ${result.count} values, text now: "${result.text.substring(0, 100)}${result.text.length > 100 ? '...' : ''}"`);
               part.text = result.text;
               changedCount += result.count;
             }
@@ -232,30 +237,50 @@ export const OpenCodeGuard = async (ctx) => {
         if (debug) console.log(`[opencode-guard] skipping excluded MCP server: ${serverName}`);
         return;
       }
-      
+
       const session = getSession(input?.sessionID);
-      if (!session) return;
+      if (!session) {
+        if (debug) console.log(`[opencode-guard] mcp.tool.call.before: no session for ${input?.sessionID}`);
+        return;
+      }
 
       if (output?.args && typeof output.args === 'object') {
+        if (debug) console.log(`[opencode-guard] mcp.tool.call.before: masking args for ${input?.toolName}`, JSON.stringify(output.args));
         await redactDeep(output.args, patterns, session, aiDetector);
+        if (debug) console.log(`[opencode-guard] mcp.tool.call.before: masked args`, JSON.stringify(output.args));
       }
     },
 
     'mcp.tool.call.after': async (input, output) => {
       const session = getSession(input?.sessionID);
-      if (!session) return;
+      if (!session) {
+        if (debug) console.log(`[opencode-guard] mcp.tool.call.after: no session for ${input?.sessionID}`);
+        return;
+      }
 
       if (output?.result !== undefined) {
-        restoreDeep(output.result, session);
+        if (debug) console.log(`[opencode-guard] mcp.tool.call.after: restoring result`);
+        restoreDeep(output.result, session, new WeakSet(), debug);
       }
     },
 
     'tool.execute.before': async (input, output) => {
       const session = getSession(input?.sessionID);
-      if (!session) return;
+      if (!session) {
+        if (debug) console.log(`[opencode-guard] tool.execute.before: no session for ${input?.sessionID}`);
+        return;
+      }
 
       if (output?.args && typeof output.args === 'object') {
-        restoreDeep(output.args, session);
+        if (debug) {
+          console.log(`[opencode-guard] tool.execute.before: restoring args`, JSON.stringify(output.args));
+          console.log(`[opencode-guard] tool.execute.before: session has ${session.maskedToOriginal.size} mappings`);
+          for (const [masked, original] of session.maskedToOriginal) {
+            console.log(`[opencode-guard]   mapping: "${masked}" -> "${original}"`);
+          }
+        }
+        restoreDeep(output.args, session, new WeakSet(), debug);
+        if (debug) console.log(`[opencode-guard] tool.execute.before: restored args`, JSON.stringify(output.args));
       }
     },
   };

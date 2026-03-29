@@ -39,9 +39,12 @@ export class MaskSession {
     }
   }
   
-  getOrCreateMasked(original, category, maskAs) {
+  getOrCreateMasked(original, category, maskAs, debug = false) {
     const existing = this.originalToMasked.get(original);
-    if (existing) return existing;
+    if (existing) {
+      if (debug) console.log(`[opencode-guard] session: reusing existing mask "${original}" -> "${existing}"`);
+      return existing;
+    }
     
     this.cleanup();
     while (this.originalToMasked.size >= this.maxMappings) {
@@ -54,6 +57,7 @@ export class MaskSession {
     this.maskedToOriginal.set(masked, original);
     this.timestamps.set(masked, Date.now());
     
+    if (debug) console.log(`[opencode-guard] session: created mask "${original}" -> "${masked}"`);
     return masked;
   }
   
