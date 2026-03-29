@@ -5,6 +5,7 @@ import { redactText, redactDeep } from './engine.js';
 import { restoreText, restoreDeep } from './restore.js';
 import { initializeCustomMaskers } from './maskers/index.js';
 import { StreamingUnmasker } from './streaming-unmasker.js';
+import { AIDetector } from './ai-detector/index.js';
 
 /**
  * OpenCode Guard Plugin
@@ -31,6 +32,18 @@ export const OpenCodeGuard = async (ctx) => {
   }
 
   initializeCustomMaskers(config.customMaskers);
+
+  // Initialize AI detector if enabled
+  let aiDetector = null;
+  if (config.detection?.aiDetection) {
+    aiDetector = new AIDetector({
+      provider: config.detection.aiProvider,
+      timeoutMs: config.detection.aiTimeoutMs,
+    });
+    if (debug) {
+      console.log(`[opencode-guard] AI detection enabled (${config.detection.aiProvider})`);
+    }
+  }
 
   const patterns = buildPatternSet(config.patterns);
   const sessions = new Map();
@@ -109,7 +122,7 @@ export const OpenCodeGuard = async (ctx) => {
           if (part.type === 'text' || part.type === 'reasoning') {
             if (!part.text || typeof part.text !== 'string') continue;
             if (part.ignored) continue;
-            const result = await redactText(part.text, patterns, session);
+            const result = await redactText(part.text, patterns, session, aiDetector);
             if (result.count > 0) {
               part.text = result.text;
               changedCount += result.count;
@@ -122,11 +135,11 @@ export const OpenCodeGuard = async (ctx) => {
             if (!state || typeof state !== 'object') continue;
 
             if (state.input && typeof state.input === 'object') {
-              await redactDeep(state.input, patterns, session);
+              await redactDeep(state.input, patterns, session, aiDetector);
             }
 
             if (state.status === 'completed' && typeof state.output === 'string') {
-              const result = await redactText(state.output, patterns, session);
+              const result = await redactText(state.output, patterns, session, aiDetector);
               if (result.count > 0) {
                 state.output = result.text;
                 changedCount += result.count;
@@ -134,7 +147,7 @@ export const OpenCodeGuard = async (ctx) => {
             }
 
             if (state.status === 'error' && typeof state.error === 'string') {
-              const result = await redactText(state.error, patterns, session);
+              const result = await redactText(state.error, patterns, session, aiDetector);
               if (result.count > 0) {
                 state.error = result.text;
                 changedCount += result.count;
@@ -200,7 +213,7 @@ export const OpenCodeGuard = async (ctx) => {
       if (!session) return;
 
       if (output?.args && typeof output.args === 'object') {
-        await redactDeep(output.args, patterns, session);
+        await redactDeep(output.args, patterns, session, aiDetector);
       }
     },
 

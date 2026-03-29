@@ -1,9 +1,11 @@
-export async function detectSensitiveData(text, patterns, options = {}) {
+import { mergeResults } from './ai-detector/merge.js';
+
+export async function detectSensitiveData(text, patterns, aiDetector = null) {
   if (typeof text !== 'string' || !text) {
     return [];
   }
 
-  const results = [];
+  const regexResults = [];
   const seen = new Set();
   
   for (const rule of (patterns.regex || [])) {
@@ -24,7 +26,7 @@ export async function detectSensitiveData(text, patterns, options = {}) {
       const key = `${match.index}-${match.index + matchedText.length}`;
       if (!seen.has(key)) {
         seen.add(key);
-        results.push({
+        regexResults.push({
           start: match.index,
           end: match.index + matchedText.length,
           text: matchedText,
@@ -44,7 +46,7 @@ export async function detectSensitiveData(text, patterns, options = {}) {
       const key = `${pos}-${pos + value.length}`;
       if (!seen.has(key)) {
         seen.add(key);
-        results.push({
+        regexResults.push({
           start: pos,
           end: pos + value.length,
           text: value,
@@ -56,10 +58,10 @@ export async function detectSensitiveData(text, patterns, options = {}) {
     }
   }
   
-  results.sort((a, b) => a.start - b.start);
+  regexResults.sort((a, b) => a.start - b.start);
   
   const filtered = [];
-  for (const result of results) {
+  for (const result of regexResults) {
     let overlaps = false;
     for (const existing of filtered) {
       if (result.start < existing.end && result.end > existing.start) {
@@ -73,5 +75,19 @@ export async function detectSensitiveData(text, patterns, options = {}) {
     if (!overlaps) filtered.push(result);
   }
   
-  return filtered;
+  // Run AI detection if available
+  let aiResults = [];
+  if (aiDetector) {
+    try {
+      aiResults = await aiDetector.detect(text);
+    } catch (err) {
+      // AI detection failures are non-fatal
+      if (process.env.OPENCODE_GUARD_DEBUG) {
+        console.warn(`[opencode-guard] AI detection error: ${err.message}`);
+      }
+    }
+  }
+  
+  // Merge regex and AI results
+  return mergeResults(filtered, aiResults);
 }

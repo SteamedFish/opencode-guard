@@ -1,11 +1,11 @@
 import { detectSensitiveData } from './detector.js';
 
-export async function redactText(text, patterns, session) {
+export async function redactText(text, patterns, session, aiDetector = null) {
   if (typeof text !== 'string' || !text) {
     return { text, count: 0 };
   }
   
-  const matches = await detectSensitiveData(text, patterns);
+  const matches = await detectSensitiveData(text, patterns, aiDetector);
   if (matches.length === 0) {
     return { text, count: 0 };
   }
@@ -23,9 +23,9 @@ export async function redactText(text, patterns, session) {
   return { text: result, count };
 }
 
-export async function redactDeep(value, patterns, session, visited = new WeakSet()) {
+export async function redactDeep(value, patterns, session, aiDetector = null, visited = new WeakSet()) {
   if (typeof value === 'string') {
-    const result = await redactText(value, patterns, session);
+    const result = await redactText(value, patterns, session, aiDetector);
     return result.text;
   }
 
@@ -35,7 +35,7 @@ export async function redactDeep(value, patterns, session, visited = new WeakSet
     }
     visited.add(value);
     for (let i = 0; i < value.length; i++) {
-      value[i] = await redactDeep(value[i], patterns, session, visited);
+      value[i] = await redactDeep(value[i], patterns, session, aiDetector, visited);
     }
     return value;
   }
@@ -46,7 +46,7 @@ export async function redactDeep(value, patterns, session, visited = new WeakSet
     }
     visited.add(value);
     for (const key of Object.keys(value)) {
-      value[key] = await redactDeep(value[key], patterns, session, visited);
+      value[key] = await redactDeep(value[key], patterns, session, aiDetector, visited);
     }
     return value;
   }
