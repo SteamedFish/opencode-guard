@@ -3,6 +3,7 @@ import { maskEmail, isEmail } from './email.js';
 import { maskSkToken, maskSkVariantToken, maskGhToken, maskAwsKey, maskGenericToken } from './token.js';
 import { maskIPv4, maskIPv6, isIPv4, isIPv6 } from './ip.js';
 import { maskUUID, isUUID } from './uuid.js';
+import { maskMACAddress, isMACAddress } from './mac.js';
 import { maskGeneric, maskWithPattern } from './generic.js';
 import { maskBasicAuth, hasBasicAuth } from './basicAuth.js';
 import { maskDatabaseConn, isDatabaseConn } from './database.js';
@@ -41,6 +42,8 @@ export function maskValue(value, category, maskAs, globalSalt) {
       return maskIPv6(value, rng);
     case 'uuid':
       return maskUUID(value, rng);
+    case 'mac_address':
+      return maskMACAddress(value, rng);
     case 'pattern':
       return maskWithPattern(value, rng);
     case 'basic_auth':
@@ -64,6 +67,8 @@ export function maskValue(value, category, maskAs, globalSalt) {
         return maskIPv6(value, rng);
       } else if (isUUID(value)) {
         return maskUUID(value, rng);
+      } else if (isMACAddress(value)) {
+        return maskMACAddress(value, rng);
       } else if (value.startsWith('sk-')) {
         return maskSkVariantToken(value, rng);
       } else if (/^(ghp|gho|ghu|ghs|ghr)_/.test(value)) {
@@ -87,6 +92,7 @@ export function getMaskerForCategory(category) {
   if (cat.includes('IPV4')) return maskIPv4;
   if (cat.includes('IPV6')) return maskIPv6;
   if (cat.includes('UUID')) return maskUUID;
+  if (cat.includes('MAC')) return maskMACAddress;
 
   return null;
 }
@@ -105,6 +111,8 @@ export {
   isIPv6,
   maskUUID,
   isUUID,
+  maskMACAddress,
+  isMACAddress,
   maskGeneric,
   maskWithPattern,
   maskBasicAuth,
