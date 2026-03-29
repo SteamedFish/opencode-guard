@@ -72,7 +72,23 @@ export function buildPatternSet(patterns) {
     }
   }
   
-  const exclude = new Set((raw.exclude || []).map(e => String(e)));
+  const DEFAULT_EXCLUDES = [
+    // Common bot/agent emails that should not be masked
+    'clio-agent@sisyphuslabs.ai',
+    'noreply@github.com',
+    'actions@github.com',
+    'github-actions[bot]@users.noreply.github.com',
+    'dependabot[bot]@users.noreply.github.com',
+    'renovate[bot]@users.noreply.github.com',
+    // Common domains that don't need masking
+    'example.com',
+    'localhost',
+  ];
+  
+  const exclude = new Set([
+    ...DEFAULT_EXCLUDES,
+    ...(raw.exclude || []).map(e => String(e))
+  ]);
   
   return { keywords, regex, exclude };
 }

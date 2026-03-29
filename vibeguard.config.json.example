@@ -124,7 +124,7 @@
       }
     ],
     "builtin": ["email", "phone", "uuid", "ipv4"],
-    "exclude": ["example.com", "localhost", "127.0.0.1", "0.0.0.0"]
+    "exclude": ["example.com", "localhost", "127.0.0.1", "0.0.0.0", "clio-agent@sisyphuslabs.ai", "noreply@github.com", "actions@github.com"]
   },
   "custom_maskers": {
     "my_custom_token": {

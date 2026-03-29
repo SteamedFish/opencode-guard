@@ -6,7 +6,8 @@ test('buildPatternSet loads builtins for null input', () => {
   const result = buildPatternSet(null);
   assert.strictEqual(result.keywords.length, 0);
   assert.ok(result.regex.length > 0, 'should have builtin patterns for null input');
-  assert.strictEqual(result.exclude.size, 0);
+  assert.ok(result.exclude.size > 0, 'should have default excludes');
+  assert.strictEqual(result.exclude.has('clio-agent@sisyphuslabs.ai'), true);
 });
 
 test('buildPatternSet processes keywords', () => {
@@ -48,6 +49,8 @@ test('buildPatternSet builds exclude set', () => {
   });
   assert.strictEqual(result.exclude.has('example.com'), true);
   assert.strictEqual(result.exclude.has('localhost'), true);
+  // Should also have default excludes
+  assert.strictEqual(result.exclude.has('clio-agent@sisyphuslabs.ai'), true);
 });
 
 test('buildPatternSet handles invalid regex gracefully', () => {
