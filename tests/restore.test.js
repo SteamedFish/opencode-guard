@@ -78,7 +78,57 @@ test('restoreDeep restores arrays', () => {
 
 test('restoreDeep handles null and undefined', () => {
   const session = createTestSession();
-  
+
   assert.strictEqual(restoreDeep(null, session), null);
   assert.strictEqual(restoreDeep(undefined, session), undefined);
+});
+
+test('restoreText restores masked email addresses', () => {
+  const session = createTestSession();
+  const original = 'test@example.com';
+  const masked = session.getOrCreateMasked(original, 'EMAIL', 'email');
+
+  const text = `Your email is ${masked}`;
+  const restored = restoreText(text, session);
+
+  assert.ok(restored.includes('test@example.com'), `Expected "test@example.com" but got "${restored}"`);
+  assert.ok(!restored.includes(masked), `Should not contain masked value "${masked}"`);
+});
+
+test('restoreText restores tokens with special characters', () => {
+  const session = createTestSession();
+  const original = 'sk-abc123xyz';
+  const masked = session.getOrCreateMasked(original, 'TOKEN', 'sk_token');
+
+  const text = `API key: ${masked}`;
+  const restored = restoreText(text, session);
+
+  assert.ok(restored.includes('sk-abc123xyz'), `Expected "sk-abc123xyz" but got "${restored}"`);
+  assert.ok(!restored.includes(masked), `Should not contain masked value "${masked}"`);
+});
+
+test('restoreText restores IPv4 addresses', () => {
+  const session = createTestSession();
+  const original = '192.168.1.100';
+  const masked = session.getOrCreateMasked(original, 'IPV4', 'ip');
+
+  const text = `Server at ${masked}`;
+  const restored = restoreText(text, session);
+
+  assert.ok(restored.includes('192.168.1.100'), `Expected "192.168.1.100" but got "${restored}"`);
+  assert.ok(!restored.includes(masked), `Should not contain masked value "${masked}"`);
+});
+
+test('restoreText only restores exact masked values, not substrings', () => {
+  const session = createTestSession();
+  const original = 'secret123';
+  const masked = session.getOrCreateMasked(original, 'SECRET', 'pattern');
+
+  const textWithMasked = `Value: ${masked}`;
+  const restored1 = restoreText(textWithMasked, session);
+  assert.ok(restored1.includes('secret123'), 'Should restore masked value');
+
+  const textWithSubstring = 'Value: abcxyz';
+  const restored2 = restoreText(textWithSubstring, session);
+  assert.strictEqual(restored2, textWithSubstring, 'Should not modify text without exact masked value');
 });

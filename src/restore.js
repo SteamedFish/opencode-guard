@@ -2,18 +2,13 @@ export function restoreText(text, session) {
   if (typeof text !== 'string' || !text) {
     return text;
   }
-  
-  const delimiters = /([\s\n\r\t\[\]{}(),;:'"`<>|&!@#$%^*+=~?/\\]+)/;
-  const parts = text.split(delimiters);
-  
-  for (let i = 0; i < parts.length; i++) {
-    const original = session.lookupOriginal(parts[i]);
-    if (original !== undefined) {
-      parts[i] = original;
-    }
+
+  let result = text;
+  for (const [masked, original] of session.maskedToOriginal) {
+    result = result.split(masked).join(original);
   }
-  
-  return parts.join('');
+
+  return result;
 }
 
 export function restoreDeep(value, session) {
