@@ -75,6 +75,19 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 4. **Domain preservation**: Emails keep domain part
 5. **Network preservation**: IPs keep subnet prefix
 
+## DOCUMENTATION CONVENTIONS
+
+### Bilingual Documentation
+- All documentation exists in English (`.md`) and Chinese (`.zh-CN.md`) versions
+- **Cross-linking rule**: Chinese documents MUST link to Chinese versions (`.zh-CN.md`)
+  - Exception: If no Chinese version exists, link to English and note "(暂无中文版)"
+- English documents link to English versions
+- Language switch link (e.g., "[English Documentation]") is the only exception
+
+### File Naming
+- English: `FILENAME.md`
+- Chinese: `FILENAME.zh-CN.md`
+
 ## ANTI-PATTERNS (THIS PROJECT)
 
 **DO NOT:**
