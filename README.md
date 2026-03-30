@@ -24,6 +24,16 @@ OpenCode Guard is a privacy-focused plugin for [OpenCode](https://opencode.ai) t
 
 This project is **100% vibe coded** by [Kimi K2.5 for Coding](https://www.moonshot.cn/). The author doesn't understand JavaScript and hasn't read a single line of the code — but hey, it works! 🎉
 
+## Demo
+
+In this demo, we ask the LLM to print an email address as-is and with `@` replaced by `_AT_`. OpenCode Guard masks the email before it reaches the LLM, and restores the masked value in the response — so the LLM never sees the real address, but the final output is correct:
+
+[![asciicast](https://asciinema.org/a/OtAgAKxNuZNofN5O.svg)](https://asciinema.org/a/OtAgAKxNuZNofN5O)
+
+**Prompt used:**
+
+> This is my email: "thisemailisfake@example.com", please print the email as is, and print the email with @ replaced with "\_AT\_".
+
 ## Quick Start
 
 ### 1. Install

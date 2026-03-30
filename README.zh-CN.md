@@ -24,6 +24,16 @@ OpenCode Guard 是一个专注于隐私保护的 [OpenCode](https://opencode.ai)
 
 本项目由 [Kimi K2.5 for Coding](https://www.moonshot.cn/) **100% Vibe Coding** 编写。作者不懂 JavaScript，一行代码都没看过——但能用就行！🎉
 
+## 演示
+
+在这个演示中，我们要求 LLM 原样打印一个邮箱地址，并将 `@` 替换为 `_AT_` 后再打印一次。OpenCode Guard 在邮箱到达 LLM 之前对其进行脱敏，并在响应中还原脱敏值——LLM 从未看到真实地址，但最终输出是正确的：
+
+[![asciicast](https://asciinema.org/a/OtAgAKxNuZNofN5O.svg)](https://asciinema.org/a/OtAgAKxNuZNofN5O)
+
+**使用的提示词：**
+
+> This is my email: "thisemailisfake@example.com", please print the email as is, and print the email with @ replaced with "\_AT\_".
+
 ## 快速开始
 
 ### 1. 安装
