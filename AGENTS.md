@@ -97,8 +97,8 @@ node --test tests/engine.test.js
 OPENCODE_GUARD_DEBUG=1 npm test
 
 # Install locally for development
-# Add to opencode.json:
-# "plugins": ["file://./opencode-guard/src/index.js"]
+# Add to opencode.json (absolute or relative path - relative paths resolve from opencode.json location):
+# "plugins": ["file:///home/username/opencode-guard/src/index.js"]
 ```
 
 ## NOTES
