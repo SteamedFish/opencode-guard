@@ -3,6 +3,21 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 
+const DEFAULT_LOCAL_MCP_TOOLS = [
+  'submit_plan',
+  'schedule_job',
+  'list_jobs',
+  'get_version',
+  'get_skill',
+  'install_skill',
+  'get_job',
+  'update_job',
+  'delete_job',
+  'cleanup_global',
+  'run_job',
+  'job_logs',
+];
+
 export function parseDuration(duration) {
   if (typeof duration === 'number') return duration;
   const str = String(duration).trim();
@@ -76,6 +91,7 @@ export async function loadConfig(projectRoot) {
     },
     excludeLlmEndpoints: Array.isArray(raw.exclude_llm_endpoints) ? raw.exclude_llm_endpoints : [],
     excludeMcpServers: Array.isArray(raw.exclude_mcp_servers) ? raw.exclude_mcp_servers : [],
+    excludeMcpTools: Array.isArray(raw.exclude_mcp_tools) ? raw.exclude_mcp_tools : DEFAULT_LOCAL_MCP_TOOLS,
     patterns: raw.patterns || {},
     customMaskers: raw.custom_maskers || {},
   };

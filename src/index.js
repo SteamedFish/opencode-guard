@@ -120,6 +120,11 @@ export const OpenCodeGuard = async (ctx) => {
     return config.excludeMcpServers.includes(server);
   };
 
+  const isExcludedMcpTool = (tool) => {
+    if (!tool) return false;
+    return config.excludeMcpTools.includes(tool);
+  };
+
   return {
     'experimental.chat.messages.transform': async (_input, output) => {
       const msgs = output?.messages;
@@ -233,6 +238,7 @@ export const OpenCodeGuard = async (ctx) => {
 
     'mcp.tool.call.before': async (input, output) => {
       const serverName = input?.serverName;
+      const toolName = input?.toolName;
       const session = getSession(input?.sessionID);
       if (!session) {
         if (debug) console.log(`[opencode-guard] mcp.tool.call.before: no session for ${input?.sessionID}`);
@@ -240,13 +246,13 @@ export const OpenCodeGuard = async (ctx) => {
       }
 
       if (output?.args && typeof output.args === 'object') {
-        if (isExcludedMcpServer(serverName)) {
-          // Local/excluded servers: restore args so tools work with real data
-          if (debug) console.log(`[opencode-guard] mcp.tool.call.before: restoring args for local server ${serverName}`, JSON.stringify(output.args));
+        const isLocal = isExcludedMcpServer(serverName) || isExcludedMcpTool(toolName);
+        if (isLocal) {
+          const reason = isExcludedMcpServer(serverName) ? `server ${serverName}` : `tool ${toolName}`;
+          if (debug) console.log(`[opencode-guard] mcp.tool.call.before: restoring args for local ${reason}`, JSON.stringify(output.args));
           restoreDeep(output.args, session, new WeakSet(), debug);
           if (debug) console.log(`[opencode-guard] mcp.tool.call.before: restored args`, JSON.stringify(output.args));
         } else {
-          // External servers: mask args to prevent leaking secrets
           if (debug) console.log(`[opencode-guard] mcp.tool.call.before: masking args for external server ${serverName}`, JSON.stringify(output.args));
           await redactDeep(output.args, patterns, session, aiDetector);
           if (debug) console.log(`[opencode-guard] mcp.tool.call.before: masked args`, JSON.stringify(output.args));
