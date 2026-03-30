@@ -98,7 +98,7 @@ git clone https://github.com/SteamedFish/opencode-guard.git
 
 ### 快速设置
 
-**你必须创建 `vibeguard.config.json` 文件**在以下任一位置：
+**你必须创建 `opencode-guard.config.json` 文件**在以下任一位置：
 
 **方案 1：全局配置（推荐）**
 
@@ -119,7 +119,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 ```bash
 mkdir -p ~/.config/opencode
-cat > ~/.config/opencode/vibeguard.config.json << 'EOF'
+cat > ~/.config/opencode/opencode-guard.config.json << 'EOF'
 {
   "enabled": true,
   "global_salt": "YOUR_GENERATED_SALT_HERE"
@@ -130,7 +130,7 @@ EOF
 > 💡 **安全提示**：使用长且随机的盐值（至少 32 字节）。像对待密码一样对待它——不要分享或提交到版本控制。
 
 **方案 2：项目特定配置**
-在与 `opencode.json` 相同的目录（你的 OpenCode 项目根目录）创建 `vibeguard.config.json`。
+在与 `opencode.json` 相同的目录（你的 OpenCode 项目根目录）创建 `opencode-guard.config.json`。
 
 > **注意**：插件不能开箱即用。`global_salt` 是确定性脱敏所必需的，必须由你自行提供。
 
@@ -190,10 +190,10 @@ EOF
 
 插件按以下顺序搜索配置（找到第一个即停止）：
 
-1. **`OPENCODE_VIBEGUARD_CONFIG`** 环境变量（显式指定路径）
-2. **`./vibeguard.config.json`** — 项目根目录（`opencode.json` 所在目录）
-3. **`./.opencode/vibeguard.config.json`** — 项目的 `.opencode/` 子目录
-4. **`~/.config/opencode/vibeguard.config.json`** — 全局用户配置
+1. **`OPENCODE_GUARD_CONFIG`** 环境变量（显式指定路径）
+2. **`./opencode-guard.config.json`** — 项目根目录（`opencode.json` 所在目录）
+3. **`./.opencode/opencode-guard.config.json`** — 项目的 `.opencode/` 子目录
+4. **`~/.config/opencode/opencode-guard.config.json`** — 全局用户配置
 
 **重要提示**：目前配置**不会合并**。找到的第一个配置文件将被完整使用。如果同时存在全局配置和项目配置，只有项目配置会被加载。
 
@@ -276,9 +276,9 @@ opencode
 **验证配置文件位置**：
 ```bash
 # 检查配置文件是否存在于预期位置
-ls -la ~/.config/opencode/vibeguard.config.json
-ls -la ./vibeguard.config.json
-ls -la ./.opencode/vibeguard.config.json
+ls -la ~/.config/opencode/opencode-guard.config.json
+ls -la ./opencode-guard.config.json
+ls -la ./.opencode/opencode-guard.config.json
 ```
 
 ### Git 提交包含掩码值

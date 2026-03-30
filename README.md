@@ -130,7 +130,7 @@ git clone https://github.com/SteamedFish/opencode-guard.git
 
 ### Quick Setup
 
-**You MUST create a `vibeguard.config.json` file** in one of these locations:
+**You MUST create a `opencode-guard.config.json` file** in one of these locations:
 
 **Option 1: Global Config (Recommended)**
 
@@ -151,7 +151,7 @@ Then create the config file:
 
 ```bash
 mkdir -p ~/.config/opencode
-cat > ~/.config/opencode/vibeguard.config.json << 'EOF'
+cat > ~/.config/opencode/opencode-guard.config.json << 'EOF'
 {
   "enabled": true,
   "global_salt": "YOUR_GENERATED_SALT_HERE"
@@ -162,7 +162,7 @@ EOF
 > 💡 **Security tip**: Use a long, random salt (at least 32 bytes). Treat it like a password - don't share it or commit it to version control.
 
 **Option 2: Project-Specific Config**
-Create `vibeguard.config.json` in the same directory as your `opencode.json` (your OpenCode project root).
+Create `opencode-guard.config.json` in the same directory as your `opencode.json` (your OpenCode project root).
 
 > **Note**: The plugin does NOT work out-of-the-box. The `global_salt` is required for deterministic masking and must be provided by you.
 
@@ -223,9 +223,9 @@ Create `vibeguard.config.json` in the same directory as your `opencode.json` (yo
 The plugin searches for config in this order (first found wins):
 
 1. **`OPENCODE_VIBEGUARD_CONFIG`** environment variable (explicit path)
-2. **`./vibeguard.config.json`** — Project root (where your `opencode.json` is)
-3. **`./.opencode/vibeguard.config.json`** — Project's `.opencode/` subdirectory
-4. **`~/.config/opencode/vibeguard.config.json`** — Global user config
+2. **`./opencode-guard.config.json`** — Project root (where your `opencode.json` is)
+3. **`./.opencode/opencode-guard.config.json`** — Project's `.opencode/` subdirectory
+4. **`~/.config/opencode/opencode-guard.config.json`** — Global user config
 
 **Important**: Currently, configs do **NOT** merge. The first config file found is used as-is. If you have both global and project configs, only the project config will be loaded.
 
@@ -308,9 +308,9 @@ Look for messages like:
 **Verify config location**:
 ```bash
 # Check if config exists in one of the expected locations
-ls -la ~/.config/opencode/vibeguard.config.json
-ls -la ./vibeguard.config.json
-ls -la ./.opencode/vibeguard.config.json
+ls -la ~/.config/opencode/opencode-guard.config.json
+ls -la ./opencode-guard.config.json
+ls -la ./.opencode/opencode-guard.config.json
 ```
 
 ### Git commits contain masked values

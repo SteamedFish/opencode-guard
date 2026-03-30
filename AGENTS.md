@@ -34,7 +34,7 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 │       └── custom.js      # Custom masker registry
 ├── tests/                 # Mirror of src/ structure
 ├── docs/                  # Additional documentation
-├── vibeguard.config.json.example  # Configuration template
+├── opencode-guard.config.json.example  # Configuration template
 ├── package.json           # ES module, Node >=18
 └── README.md / README.zh-CN.md
 ```
@@ -47,7 +47,7 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 | Add detection pattern | `src/patterns.js` | Add to `BUILTIN` Map or via config |
 | Change masking behavior | `src/maskers/*.js` | Each type has dedicated masker |
 | Plugin hooks | `src/index.js` | 5 OpenCode lifecycle hooks |
-| Configuration schema | `vibeguard.config.json.example` | All options documented |
+| Configuration schema | `opencode-guard.config.json.example` | All options documented |
 | Tests | `tests/` | Mirror structure - one test per source file |
 
 ## CONVENTIONS
@@ -117,10 +117,10 @@ OPENCODE_GUARD_DEBUG=1 npm test
 - Max mappings limit prevents memory leaks
 
 ### Configuration Priority (highest to lowest)
-1. `OPENCODE_VIBEGUARD_CONFIG` env var (explicit path)
-2. `./vibeguard.config.json` (project root)
-3. `./.opencode/vibeguard.config.json`
-4. `~/.config/opencode/vibeguard.config.json`
+1. `OPENCODE_GUARD_CONFIG` env var (explicit path)
+2. `./opencode-guard.config.json` (project root)
+3. `./.opencode/opencode-guard.config.json`
+4. `~/.config/opencode/opencode-guard.config.json`
 
 ### Security Model
 - `global_salt` required - shared secret for deterministic masking
