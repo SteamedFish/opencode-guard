@@ -28,7 +28,7 @@
 - Create: `tests/` directory
 - Create: `tests/maskers/` directory
 - Create: `docs/` directory (if not exists)
-- Create: `vibeguard.config.json.example`
+- Create: `opencode-guard.config.json.example`
 
 **Step 1: Create package.json**
 
@@ -44,7 +44,7 @@
     "src",
     "README.md",
     "README.zh-CN.md",
-    "vibeguard.config.json.example"
+    "opencode-guard.config.json.example"
   ],
   "scripts": {
     "test": "node --test",
@@ -149,7 +149,7 @@ mkdir -p src/maskers tests/maskers
 **Step 4: Commit**
 
 ```bash
-git add package.json vibeguard.config.json.example
+git add package.json opencode-guard.config.json.example
 mkdir -p src/maskers tests/maskers
 git add src tests
 git commit -m "chore: initialize project structure with package.json"
@@ -1859,7 +1859,7 @@ export function parseDuration(duration) {
 }
 
 async function findConfigFile(projectRoot) {
-  const envPath = process.env.OPENCODE_VIBEGUARD_CONFIG;
+  const envPath = process.env.OPENCODE_GUARD_CONFIG;
   if (envPath && existsSync(envPath)) {
     try {
       const content = JSON.parse(await readFile(envPath, 'utf-8'));
@@ -1868,9 +1868,9 @@ async function findConfigFile(projectRoot) {
   }
 
   const locations = [
-    join(projectRoot, 'vibeguard.config.json'),
-    join(projectRoot, '.opencode', 'vibeguard.config.json'),
-    join(homedir(), '.config', 'opencode', 'vibeguard.config.json'),
+    join(projectRoot, 'opencode-guard.config.json'),
+    join(projectRoot, '.opencode', 'opencode-guard.config.json'),
+    join(homedir(), '.config', 'opencode', 'opencode-guard.config.json'),
   ];
 
   for (const path of locations) {

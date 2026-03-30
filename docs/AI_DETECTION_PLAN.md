@@ -1156,13 +1156,13 @@ git push origin feature/ai-detection
 ## Task 7: Add Configuration Examples and Documentation
 
 **Files:**
-- Modify: `vibeguard.config.json.example`
+- Modify: `opencode-guard.config.json.example`
 - Modify: `README.md`
 - Create: `docs/AI_DETECTION.md`
 
 **Step 1: Update config example**
 
-Add to `vibeguard.config.json.example`:
+Add to `opencode-guard.config.json.example`:
 ```json
 {
   "detection": {
@@ -1310,7 +1310,7 @@ See [docs/AI_DETECTION.md](docs/AI_DETECTION.md) for full configuration options.
 **Step 4: Commit**
 
 ```bash
-git add vibeguard.config.json.example README.md docs/AI_DETECTION.md
+git add opencode-guard.config.json.example README.md docs/AI_DETECTION.md
 git commit -m "docs(ai): add AI detection configuration examples and documentation"
 git push origin feature/ai-detection
 ```
