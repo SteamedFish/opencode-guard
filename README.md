@@ -94,21 +94,21 @@ OpenCode Guard now automatically masks sensitive data in all LLM and MCP interac
 ```mermaid
 flowchart LR
     subgraph You
-        A["Your prompt\njohn@example.com"]
+        A["Your prompt<br/>john@example.com"]
     end
 
     subgraph OG["OpenCode Guard"]
-        B["🔍 Detect &\n🎭 Mask"]
-        E["🔓 Restore"]
+        B["Detect & Mask"]
+        E["Restore"]
     end
 
     subgraph LLM["LLM Provider"]
-        C["Sees only masked data\na3f7@example.com"]
+        C["Sees only masked data<br/>a3f7@example.com"]
     end
 
     A -- "outgoing" --> B
     B -- "masked" --> C
-    C -- "response\n(contains masked values)" --> E
+    C -- "response<br/>(contains masked values)" --> E
     E -- "restored" --> A
 
     style OG fill:#f0f4ff,stroke:#4a6cf7,stroke-width:2px
