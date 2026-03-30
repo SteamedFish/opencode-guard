@@ -18,6 +18,12 @@ OpenCode Guard is a privacy-focused plugin for [OpenCode](https://opencode.ai) t
 - 🚫 **Excluded Endpoints**: Configure specific endpoints to skip masking
 - 💾 **In-Memory Storage**: No persistent storage of secrets
 
+## Disclaimer
+
+[![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-100%25-blueviolet)](https://x.com/karpathy/status/1915000668776960013)
+
+This project is **100% vibe coded** by [Kimi K2.5 for Coding](https://www.moonshot.cn/). The author doesn't understand JavaScript and hasn't read a single line of the code — but hey, it works! 🎉
+
 ## Quick Start
 
 ### 1. Install

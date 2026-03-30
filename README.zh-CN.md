@@ -18,6 +18,12 @@ OpenCode Guard 是一个专注于隐私保护的 [OpenCode](https://opencode.ai)
 - 🚫 **排除端点**：可配置特定端点跳过脱敏
 - 💾 **内存存储**：不持久化存储敏感信息
 
+## 免责声明
+
+[![Vibe Coded](https://img.shields.io/badge/Vibe_Coded-100%25-blueviolet)](https://x.com/karpathy/status/1915000668776960013)
+
+本项目由 [Kimi K2.5 for Coding](https://www.moonshot.cn/) **100% Vibe Coding** 编写。作者不懂 JavaScript，一行代码都没看过——但能用就行！🎉
+
 ## 快速开始
 
 ### 1. 安装
