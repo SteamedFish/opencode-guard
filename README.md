@@ -26,13 +26,20 @@ This project is **100% vibe coded** by [Kimi K2.5 for Coding](https://www.moonsh
 
 ## Demo
 
-In this demo, we ask the LLM to print an email address as-is and with `@` replaced by `_AT_`. OpenCode Guard masks the email before it reaches the LLM, and restores the masked value in the response — so the LLM never sees the real address, but the final output is correct:
+In this demo, we ask the LLM to:
+1. Print an email address **as-is**
+2. Print the same email with `@` replaced by `_AT_`
 
 [![asciicast](https://asciinema.org/a/OtAgAKxNuZNofN5O.png)](https://asciinema.org/a/OtAgAKxNuZNofN5O)
 
 **Prompt used:**
 
 > This is my email: "thisemailisfake@example.com", please print the email as is, and print the email with @ replaced with "\_AT\_".
+
+**What to observe:**
+
+- The **as-is** email is correctly restored to the original — because the masked value has the same email format, OpenCode Guard can match it back.
+- The **`@` → `_AT_`** version is **not** restored — it still shows the masked content. This is the proof that the LLM never saw the real email. The LLM applied the format change to the *masked* email it received, producing a string that no longer matches any known masked value, so OpenCode Guard cannot (and should not) restore it.
 
 ## Quick Start
 

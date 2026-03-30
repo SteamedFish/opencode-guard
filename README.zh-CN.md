@@ -26,13 +26,20 @@ OpenCode Guard 是一个专注于隐私保护的 [OpenCode](https://opencode.ai)
 
 ## 演示
 
-在这个演示中，我们要求 LLM 原样打印一个邮箱地址，并将 `@` 替换为 `_AT_` 后再打印一次。OpenCode Guard 在邮箱到达 LLM 之前对其进行脱敏，并在响应中还原脱敏值——LLM 从未看到真实地址，但最终输出是正确的：
+在这个演示中，我们要求 LLM：
+1. **原样打印**一个邮箱地址
+2. 将 `@` 替换为 `_AT_` 后**再打印一次**
 
 [![asciicast](https://asciinema.org/a/OtAgAKxNuZNofN5O.png)](https://asciinema.org/a/OtAgAKxNuZNofN5O)
 
 **使用的提示词：**
 
 > This is my email: "thisemailisfake@example.com", please print the email as is, and print the email with @ replaced with "\_AT\_".
+
+**观察要点：**
+
+- **原样打印**的邮箱被正确还原为原始值——因为脱敏值保持了相同的邮箱格式，OpenCode Guard 可以匹配并还原。
+- **`@` → `_AT_`** 的版本**未被还原**——仍然显示的是脱敏后的内容。这正是 LLM 从未看到真实邮箱的证据。LLM 对它收到的*脱敏邮箱*执行了格式变换，产生了一个不再匹配任何已知脱敏值的字符串，因此 OpenCode Guard 无法（也不应该）还原它。
 
 ## 快速开始
 
