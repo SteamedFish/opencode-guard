@@ -23,10 +23,10 @@ test('parseDuration returns default for invalid input', () => {
 });
 
 test('loadConfig returns disabled config when plugin is disabled', async () => {
-  const originalEnv = process.env.OPENCODE_VIBEGUARD_CONFIG;
-  const tempConfig = join(tmpdir(), `vibeguard-test-${Date.now()}.json`);
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}.json`);
   await writeFile(tempConfig, JSON.stringify({ enabled: false }));
-  process.env.OPENCODE_VIBEGUARD_CONFIG = tempConfig;
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
 
   try {
     const config = await loadConfig('/nonexistent/path');
@@ -35,9 +35,9 @@ test('loadConfig returns disabled config when plugin is disabled', async () => {
     assert.strictEqual(config.loadedFrom, tempConfig);
   } finally {
     if (originalEnv !== undefined) {
-      process.env.OPENCODE_VIBEGUARD_CONFIG = originalEnv;
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
     } else {
-      delete process.env.OPENCODE_VIBEGUARD_CONFIG;
+      delete process.env.OPENCODE_GUARD_CONFIG;
     }
     await unlink(tempConfig).catch(() => {});
   }

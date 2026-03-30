@@ -11,7 +11,7 @@ const __dirname = dirname(__filename);
 
 // Helper to create temp config
 async function createTempConfig(dir, config) {
-  const configPath = join(dir, 'vibeguard.config.json');
+  const configPath = join(dir, 'opencode-guard.config.json');
   await writeFile(configPath, JSON.stringify(config));
   return configPath;
 }
@@ -26,7 +26,7 @@ async function createTempDir() {
 // Helper to cleanup
 async function cleanup(dir) {
   try {
-    await unlink(join(dir, 'vibeguard.config.json'));
+    await unlink(join(dir, 'opencode-guard.config.json'));
     await rmdir(dir);
   } catch {}
 }
