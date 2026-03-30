@@ -160,6 +160,20 @@ EOF
   "exclude_mcp_servers": [
     "local-filesystem"
   ],
+  "exclude_mcp_tools": [
+    "submit_plan",
+    "schedule_job",
+    "list_jobs",
+    "get_version",
+    "get_skill",
+    "install_skill",
+    "get_job",
+    "update_job",
+    "delete_job",
+    "cleanup_global",
+    "run_job",
+    "job_logs"
+  ],
   "patterns": {
     "keywords": [],
     "regex": [
@@ -185,6 +199,7 @@ EOF
 | `detection.ai_detection` | 启用基于 AI 的检测 | `false` |
 | `exclude_llm_endpoints` | 跳过脱敏的 LLM 端点 | `[]` |
 | `exclude_mcp_servers` | 视为"本地"的 MCP 服务器（参见 [MCP 服务器指南](docs/MCP_SERVERS.zh-CN.md)） | `[]` |
+| `exclude_mcp_tools` | 根据工具名称视为"本地"的 MCP 工具（参见 [MCP 服务器指南](docs/MCP_SERVERS.zh-CN.md)） | 内置工具 |
 
 ### 配置文件位置（按优先级排序）
 
@@ -293,6 +308,8 @@ ls -la ./.opencode/opencode-guard.config.json
   "exclude_mcp_servers": ["git", "github", "filesystem"]
 }
 ```
+
+**注意**：OpenCode 的内置工具（`bash`、`read`、`write`、`edit` 等）自动视为本地，无需添加到排除列表。只有 MCP 服务器和 MCP 工具需要显式配置。
 
 详见 [MCP 服务器配置指南](docs/MCP_SERVERS.zh-CN.md)。
 

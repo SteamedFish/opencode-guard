@@ -8,6 +8,14 @@ MCP 服务器为 OpenCode 扩展工具和能力：
 - **本地服务器**：文件系统、git、shell 命令（在您的机器上运行）
 - **外部服务器**：API、Web 服务、第三方集成（将数据发送到外部）
 
+### 内置工具自动视为本地
+
+**OpenCode 的内置工具**（如 `bash`、`read`、`write`、`edit`、`grep`、`task` 等）**自动视为本地**，无需添加到任何排除列表。这些工具始终通过 `tool.execute.before` 钩子接收真实（未掩码）数据。
+
+您只需要为以下情况配置排除：
+- **MCP 服务器**通过 `exclude_mcp_servers`（如 `"filesystem"`、`"git"`）
+- **特定 MCP 工具**通过 `exclude_mcp_tools`（如 `"submit_plan"`、`"schedule_job"`）
+
 ## 安全挑战
 
 不同类型的服务器需要不同的处理方式：
@@ -36,6 +44,28 @@ MCP 服务器为 OpenCode 扩展工具和能力：
 ```
 
 **默认行为**：不在此列表中的服务器被视为**外部**，接收**掩码数据**。
+
+### `exclude_mcp_tools` - 将特定工具标记为"本地"
+
+将特定工具名称添加到此列表，以便无论它们来自哪个服务器，都将其视为本地：
+
+```json
+{
+  "exclude_mcp_tools": [
+    "submit_plan",
+    "schedule_job",
+    "list_jobs"
+  ]
+}
+```
+
+**默认排除**：以下工具默认自动排除：
+- `submit_plan`, `schedule_job`, `list_jobs`, `get_version`
+- `get_skill`, `install_skill`
+- `get_job`, `update_job`, `delete_job`, `run_job`, `job_logs`
+- `cleanup_global`
+
+这些是 OpenCode 的内置工具，需要真实数据才能正常工作。
 
 ### 常见 MCP 服务器
 
@@ -195,7 +225,7 @@ MCP 服务器为 OpenCode 扩展工具和能力：
 答：问："这个服务器会将数据发送到我的机器外部吗？" 如果是，它是外部的，不应该被排除。
 
 **问：我可以排除特定工具而不是整个服务器吗？**
-答：目前不可以。排除是在服务器级别进行的。
+答：可以！使用 `exclude_mcp_tools` 配置选项将特定工具标记为本地，无论它们属于哪个服务器。当您希望服务器中的大多数工具被掩码，但需要特定工具接收真实数据时，这很有用。
 
 **问：那同时执行本地和外部操作的工具呢？**
 答：目前，您必须根据主要用例选择。考虑为不同操作使用单独的 MCP 服务器。

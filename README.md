@@ -192,6 +192,20 @@ Create `opencode-guard.config.json` in the same directory as your `opencode.json
   "exclude_mcp_servers": [
     "local-filesystem"
   ],
+  "exclude_mcp_tools": [
+    "submit_plan",
+    "schedule_job",
+    "list_jobs",
+    "get_version",
+    "get_skill",
+    "install_skill",
+    "get_job",
+    "update_job",
+    "delete_job",
+    "cleanup_global",
+    "run_job",
+    "job_logs"
+  ],
   "patterns": {
     "keywords": [],
     "regex": [
@@ -217,6 +231,7 @@ Create `opencode-guard.config.json` in the same directory as your `opencode.json
 | `detection.ai_detection` | Enable AI-based detection | `false` |
 | `exclude_llm_endpoints` | LLM endpoints to skip masking | `[]` |
 | `exclude_mcp_servers` | MCP servers to treat as "local" (see [MCP Server Guide](docs/MCP_SERVERS.md)) | `[]` |
+| `exclude_mcp_tools` | MCP tools to treat as "local" by tool name (see [MCP Server Guide](docs/MCP_SERVERS.md)) | Built-in tools |
 
 ### Config File Locations (in order of priority)
 
@@ -325,6 +340,8 @@ ls -la ./.opencode/opencode-guard.config.json
   "exclude_mcp_servers": ["git", "github", "filesystem"]
 }
 ```
+
+**Note**: OpenCode's built-in tools (`bash`, `read`, `write`, `edit`, etc.) are automatically treated as local and don't need to be added to exclusion lists. Only MCP servers and MCP tools need explicit configuration.
 
 See [MCP Server Configuration Guide](docs/MCP_SERVERS.md) for detailed explanation.
 

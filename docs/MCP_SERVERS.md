@@ -8,6 +8,14 @@ MCP servers extend OpenCode with tools and capabilities:
 - **Local servers**: Filesystem, git, shell commands (run on your machine)
 - **External servers**: APIs, web services, third-party integrations (send data outside)
 
+### Built-in Tools are Automatically Local
+
+**OpenCode's built-in tools** (like `bash`, `read`, `write`, `edit`, `grep`, `task`, etc.) are **automatically treated as local** and do NOT need to be added to any exclusion list. These tools always receive real (unmasked) data through the `tool.execute.before` hook.
+
+You only need to configure exclusions for:
+- **MCP servers** via `exclude_mcp_servers` (e.g., `"filesystem"`, `"git"`)
+- **Specific MCP tools** via `exclude_mcp_tools` (e.g., `"submit_plan"`, `"schedule_job"`)
+
 ## The Security Challenge
 
 Different servers need different treatment:
@@ -36,6 +44,28 @@ Add local/trusted servers to this list so they receive **real (unmasked) data**:
 ```
 
 **Default behavior**: Servers NOT in this list are treated as **external** and receive **masked data**.
+
+### `exclude_mcp_tools` - Mark Specific Tools as "Local"
+
+Add specific tool names to this list to treat them as local regardless of which server they come from:
+
+```json
+{
+  "exclude_mcp_tools": [
+    "submit_plan",
+    "schedule_job",
+    "list_jobs"
+  ]
+}
+```
+
+**Default exclusions**: The following tools are automatically excluded by default:
+- `submit_plan`, `schedule_job`, `list_jobs`, `get_version`
+- `get_skill`, `install_skill`
+- `get_job`, `update_job`, `delete_job`, `run_job`, `job_logs`
+- `cleanup_global`
+
+These are OpenCode's built-in tools that need real data to function properly.
 
 ### Common MCP Servers
 
@@ -195,7 +225,7 @@ A: Consider if the data is truly sensitive. If yes, use a different communicatio
 A: Ask: "Does this server send data outside my machine?" If yes, it's external and should NOT be excluded.
 
 **Q: Can I exclude specific tools instead of entire servers?**
-A: Not currently. Exclusions are at the server level.
+A: Yes! Use the `exclude_mcp_tools` configuration option to mark specific tools as local, regardless of which server they belong to. This is useful when you want most tools from a server to be masked, but need specific tools to receive real data.
 
 **Q: What about tools that do both local and external operations?**
 A: Currently, you must choose based on primary use case. Consider using separate MCP servers for different operations.
