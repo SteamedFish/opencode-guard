@@ -91,18 +91,31 @@ OpenCode Guard now automatically masks sensitive data in all LLM and MCP interac
 
 ## How It Works
 
+```mermaid
+flowchart LR
+    subgraph You
+        A["Your prompt\njohn@example.com"]
+    end
+
+    subgraph OG["OpenCode Guard"]
+        B["🔍 Detect &\n🎭 Mask"]
+        E["🔓 Restore"]
+    end
+
+    subgraph LLM["LLM Provider"]
+        C["Sees only masked data\na3f7@example.com"]
+    end
+
+    A -- "outgoing" --> B
+    B -- "masked" --> C
+    C -- "response\n(contains masked values)" --> E
+    E -- "restored" --> A
+
+    style OG fill:#f0f4ff,stroke:#4a6cf7,stroke-width:2px
+    style LLM fill:#fff3e0,stroke:#ff9800,stroke-width:2px
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Original  │────▶│    Mask      │────▶│    LLM      │
-│   Text      │     │   Engine     │     │   Provider  │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │  Deterministic│
-                    │  Masked Value │
-                    └──────────────┘
-```
+
+> **The key insight**: the LLM never sees your real data. It processes masked values that *look* real. When the response comes back to OpenCode, Guard restores masked values to their originals — but only if the format was preserved. If the LLM transformed the value (e.g. `@` → `_AT_`), restoration is impossible, proving the LLM only ever had the masked version.
 
 ### Masking Examples
 
