@@ -19,7 +19,7 @@ export function parseDuration(duration) {
 }
 
 async function findConfigFile(projectRoot) {
-  const envPath = process.env.OPENCODE_VIBEGUARD_CONFIG;
+  const envPath = process.env.OPENCODE_GUARD_CONFIG;
   if (envPath && existsSync(envPath)) {
     try {
       const content = JSON.parse(await readFile(envPath, 'utf-8'));
@@ -28,9 +28,9 @@ async function findConfigFile(projectRoot) {
   }
 
   const locations = [
-    join(projectRoot, 'vibeguard.config.json'),
-    join(projectRoot, '.opencode', 'vibeguard.config.json'),
-    join(homedir(), '.config', 'opencode', 'vibeguard.config.json'),
+    join(projectRoot, 'opencode-guard.config.json'),
+    join(projectRoot, '.opencode', 'opencode-guard.config.json'),
+    join(homedir(), '.config', 'opencode', 'opencode-guard.config.json'),
   ];
 
   for (const path of locations) {

@@ -9,7 +9,7 @@
     "src",
     "README.md",
     "README.zh-CN.md",
-    "vibeguard.config.json.example"
+    "opencode-guard.config.json.example"
   ],
   "scripts": {
     "test": "node --test",
