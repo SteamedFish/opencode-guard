@@ -19,6 +19,20 @@
   },
   "exclude_llm_endpoints": [],
   "exclude_mcp_servers": [],
+  "exclude_mcp_tools": [
+    "submit_plan",
+    "schedule_job",
+    "list_jobs",
+    "get_version",
+    "get_skill",
+    "install_skill",
+    "get_job",
+    "update_job",
+    "delete_job",
+    "cleanup_global",
+    "run_job",
+    "job_logs"
+  ],
   "patterns": {
     "keywords": [],
     "regex": [
