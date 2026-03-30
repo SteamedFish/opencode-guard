@@ -155,7 +155,7 @@ npm test
 - `docs/AI_DETECTION.md` - AI 检测文档
 - `docs/MCP_SERVERS.md` - MCP 服务器配置
 - `docs/TROUBLESHOOTING.md` - 故障排查
-- `docs/design.md` - 架构设计
+- `plan/design.md` - 架构设计
 
 ---
 
