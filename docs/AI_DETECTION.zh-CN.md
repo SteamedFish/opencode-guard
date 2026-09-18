@@ -199,6 +199,8 @@ AI 检出：`742 Evergreen Terrace, Springfield`（地址组成部分）
 [opencode-guard] AI detection failed: AI detection timeout after 2000ms
 ```
 
+超时后请求仍会发出——但只做基于正则的 masking。只有 AI 检测才能发现的实体类型（例如街道地址、自然语言凭据）可能以**明文**到达 provider。此 fail-open 行为是有意设计（插件保持可用而不是破坏会话）；如果不可接受，请关闭 `ai_detection` 或配置充足的超时时间。
+
 解决方案：
 1. 增大 `ai_timeout_ms`（默认：2000ms）
 2. 使用更小的模型

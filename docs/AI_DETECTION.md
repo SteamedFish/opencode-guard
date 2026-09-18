@@ -250,6 +250,8 @@ OpenAI provider.
 [opencode-guard] AI detection failed: AI detection timeout after 2000ms
 ```
 
+On timeout the request is still sent — with regex-based masking only. Entity types that only AI detection can find (e.g. street addresses, natural-language credentials) may reach the provider **unmasked**. This fail-open behavior is intentional (the plugin keeps working rather than breaking your session); if that is unacceptable, keep `ai_detection` off or budget a generous timeout.
+
 Solutions:
 1. Increase `ai_timeout_ms` (default: 2000ms)
 2. Use a smaller model
