@@ -81,6 +81,15 @@ git clone https://github.com/SteamedFish/opencode-guard.git ~/opencode-guard
 
 > **路径说明**：你可以使用绝对路径（`file:///home/...`）或相对路径。相对路径会从 **`opencode.json` 文件所在位置**解析，而不是你当前的工作目录。
 
+**OpenCode v2 替代方案 —— 自动发现 + 热重载（推荐）**：无需修改 `opencode.json`，把插件的 `src/` 目录链接到全局插件目录即可。v2 会自动发现 `<目录>/index.js`，并在文件变化时热重载插件：
+
+```bash
+mkdir -p ~/.config/opencode/plugins
+ln -s ~/opencode-guard/src ~/.config/opencode/plugins/opencode-guard
+```
+
+如需项目级安装，改用项目内的 `.opencode/plugins/opencode-guard/`。在 OpenCode v1 上，唯一方式是上面 `opencode.json` 中的 `plugins` 数组。
+
 ### 2. 配置
 
 生成安全盐值：

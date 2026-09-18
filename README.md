@@ -81,6 +81,15 @@ Add to your `opencode.json`:
 
 > **Note on paths**: You can use either absolute paths (`file:///home/...`) or relative paths. Relative paths are resolved from the **location of your `opencode.json` file**, not your current working directory.
 
+**OpenCode v2 alternative — auto-discovery + hot reload (recommended)**: instead of editing `opencode.json`, link the plugin's `src/` directory into the global plugins directory. V2 discovers `<dir>/index.js` automatically and hot-reloads the plugin when its files change:
+
+```bash
+mkdir -p ~/.config/opencode/plugins
+ln -s ~/opencode-guard/src ~/.config/opencode/plugins/opencode-guard
+```
+
+For a project-local install, use `.opencode/plugins/opencode-guard/` inside the project instead. On OpenCode v1, the `plugins` array in `opencode.json` (shown above) is the only option.
+
 ### 2. Configure
 
 Generate a secure salt:
