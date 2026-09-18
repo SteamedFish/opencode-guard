@@ -13,7 +13,7 @@ function addMapping(session, masked, original) {
 }
 
 test('isJsonSafe returns true for plain text', () => {
-  assert.strictEqual(isJsonSafe('user@example.com'), true);
+  assert.strictEqual(isJsonSafe('ccbi@example.com'), true);
   assert.strictEqual(isJsonSafe('hello world'), true);
 });
 
@@ -22,16 +22,16 @@ test('isJsonSafe returns false for quotes, backslashes, and control chars', () =
   assert.strictEqual(isJsonSafe('pass\\word'), false);
   assert.strictEqual(isJsonSafe('pass\nword'), false);
   assert.strictEqual(isJsonSafe('pass\tword'), false);
-  assert.strictEqual(isJsonSafe('password'), false);
+  assert.strictEqual(isJsonSafe('pass\x1fword'), false);
 });
 
 test('createJsonSafeSessionView hides non-JSON-safe originals', () => {
   const session = makeSession();
-  addMapping(session, 'user42@example.com', 'user@example.com');
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
   addMapping(session, 'sk-Ab12Cd34Ef', 'pass"word\n123');
 
   const view = createJsonSafeSessionView(session);
-  assert.strictEqual(view.lookupOriginal('user42@example.com'), 'user@example.com');
+  assert.strictEqual(view.lookupOriginal('u8ol4n@example.com'), 'ccbi@example.com');
   assert.strictEqual(view.lookupOriginal('sk-Ab12Cd34Ef'), undefined);
   assert.strictEqual(view.lookupOriginal('unknown'), undefined);
 });
@@ -48,35 +48,67 @@ function sseResponse(body) {
   );
 }
 
+/** Serialize one chat.completion.chunk-like object into a complete SSE data event. */
+function chunkEvent(obj) {
+  return `data: ${JSON.stringify(obj)}\n\n`;
+}
+
+/** Extract the parsed JSON payloads of all non-[DONE] data events in `text`. */
+function parseDataEvents(text) {
+  const out = [];
+  for (const block of text.split(/\r?\n\r?\n/)) {
+    const dataLines = block
+      .split(/\r?\n/)
+      .filter((l) => l.startsWith('data:'))
+      .map((l) => l.slice(5).replace(/^ /, ''));
+    if (dataLines.length === 0) continue;
+    const payload = dataLines.join('\n');
+    if (payload.trim() === '[DONE]') continue;
+    out.push(JSON.parse(payload));
+  }
+  return out;
+}
+
 test('wrapResponse restores JSON-safe originals in SSE stream', async () => {
   const session = makeSession();
-  addMapping(session, 'user42@example.com', 'user@example.com');
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
   addMapping(session, 'sk-Ab12Cd34Ef', 'pass"word\n123');
 
-  const response = sseResponse('data: {"delta":"reply to user42@example.com","key":"sk-Ab12Cd34Ef"}\n\n');
+  const response = sseResponse(
+    chunkEvent({
+      id: 'chatcmpl-1',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'm',
+      choices: [
+        { index: 0, delta: { content: 'reply to u8ol4n@example.com key sk-Ab12Cd34Ef' }, finish_reason: null },
+      ],
+    })
+  );
   const wrapped = wrapResponse(response, session);
   assert.ok(wrapped instanceof Response);
   assert.strictEqual(wrapped.status, response.status);
   assert.strictEqual(wrapped.headers.get('content-type'), 'text/event-stream');
 
   const text = await new Response(wrapped.body).text();
-  assert.ok(text.includes('user@example.com'), 'JSON-safe original restored');
-  assert.ok(!text.includes('user42@example.com'), 'masked token replaced');
+  assert.ok(text.includes('ccbi@example.com'), 'JSON-safe original restored');
+  assert.ok(!text.includes('u8ol4n@example.com'), 'masked token replaced');
   assert.ok(text.includes('sk-Ab12Cd34Ef'), 'JSON-unsafe original stays masked');
   assert.ok(!text.includes('pass"word'), 'unsafe original not leaked');
 });
 
 test('wrapResponse handles multibyte characters split across chunks', async () => {
   const session = makeSession();
-  addMapping(session, 'user42@example.com', 'user@example.com');
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
 
-  const bytes = new TextEncoder().encode('data: {"delta":"hélö user42@example.com"}\n\n');
+  const body = chunkEvent({ choices: [{ index: 0, delta: { content: 'hélö u8ol4n@example.com' } }] });
+  const bytes = new TextEncoder().encode(body);
+  const cut = bytes.indexOf(0xc3) + 1; // split mid-codepoint inside 'é'
   const response = new Response(
     new ReadableStream({
       async start(c) {
-        // split mid-codepoint
-        c.enqueue(bytes.slice(0, 12));
-        c.enqueue(bytes.slice(12));
+        c.enqueue(bytes.slice(0, cut));
+        c.enqueue(bytes.slice(cut));
         c.close();
       },
     }),
@@ -85,7 +117,7 @@ test('wrapResponse handles multibyte characters split across chunks', async () =
 
   const wrapped = wrapResponse(response, session);
   const text = await new Response(wrapped.body).text();
-  assert.ok(text.includes('user@example.com'));
+  assert.ok(text.includes('ccbi@example.com'));
   assert.ok(text.includes('hélö'));
 });
 
@@ -103,15 +135,15 @@ test('wrapResponse returns null for non-textual content types', () => {
 
 test('wrapResponse wraps JSON content type', async () => {
   const session = makeSession();
-  addMapping(session, 'user42@example.com', 'user@example.com');
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
 
-  const response = new Response('{"email":"user42@example.com"}', {
+  const response = new Response('{"email":"u8ol4n@example.com"}', {
     headers: { 'content-type': 'application/json' },
   });
   const wrapped = wrapResponse(response, session);
   assert.ok(wrapped);
   const text = await new Response(wrapped.body).text();
-  assert.strictEqual(text, '{"email":"user@example.com"}');
+  assert.strictEqual(text, '{"email":"ccbi@example.com"}');
 });
 
 test('createJsonSafeSessionView exposes only JSON-safe masked keys', () => {
@@ -169,12 +201,14 @@ test('wrapResponse restores masked UUID and MAC inside JSON strings', async () =
   const session = makeSession();
   const maskedUuid = '9f8e7d6c-1111-2222-3333-444455556666';
   const originalUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-  const maskedMac = 'f0:de:bc:9a:78:56';
-  const originalMac = '00:1a:2b:3c:4d:5e';
+  const maskedMac = 'f0:de:bc:75:85:11';
+  const originalMac = '00:1a:2b:cb:33:88';
   addMapping(session, maskedUuid, originalUuid);
   addMapping(session, maskedMac, originalMac);
 
-  const response = sseResponse(`data: {"id":"${maskedUuid}","mac":"${maskedMac}"}\n\n`);
+  const response = sseResponse(
+    chunkEvent({ choices: [{ index: 0, delta: { content: `id ${maskedUuid} mac ${maskedMac}` } }] })
+  );
   const wrapped = wrapResponse(response, session);
   const text = await new Response(wrapped.body).text();
 
@@ -188,7 +222,7 @@ test('wrapResponse restores token split across chunks', async () => {
   const session = makeSession();
   addMapping(session, 'ghp_abc123def4567890', 'mysecrettoken');
 
-  const body = 'data: {"delta":"token ghp_abc123def4567890 ok"}\n\n';
+  const body = chunkEvent({ choices: [{ index: 0, delta: { content: 'token ghp_abc123def4567890 ok' } }] });
   const bytes = new TextEncoder().encode(body);
   const cut = bytes.indexOf(49); // split inside the masked token (first '1')
   const response = new Response(
@@ -206,4 +240,231 @@ test('wrapResponse restores token split across chunks', async () => {
   const text = await new Response(wrapped.body).text();
   assert.ok(text.includes('mysecrettoken'), 'split token restored');
   assert.ok(!text.includes('ghp_abc123'), 'masked token replaced');
+});
+
+// ---------------------------------------------------------------------------
+// SSE-aware content-level restore
+// ---------------------------------------------------------------------------
+
+test('wrapResponse restores masked email split across two SSE events', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const half1 = 'u8ol4n@ex';
+  const ev1 = chunkEvent({ id: 'c', created: 1, model: 'm', choices: [{ index: 0, delta: { content: `echo: ${half1}` } }] });
+  const ev2 = chunkEvent({ id: 'c', created: 1, model: 'm', choices: [{ index: 0, delta: { content: 'ample.comabcdef' } }] });
+  const done = 'data: [DONE]\n\n';
+
+  const wrapped = wrapResponse(sseResponse(ev1 + ev2 + done), session);
+  const text = await new Response(wrapped.body).text();
+
+  assert.ok(text.includes('ccbi@example.com'), 'split masked email restored');
+  assert.ok(text.includes('ccbi@example.comabcdef'), 'trailing suffix after the split key emitted intact');
+  assert.ok(!text.includes(half1), 'no residual masked fragment in final output');
+  assert.ok(text.endsWith(done), '[DONE] passes through byte-identical');
+
+  // The held-back half was truncated from event 1 (hold-back), surfaced in event 2.
+  const events = parseDataEvents(text);
+  assert.strictEqual(events[0].choices[0].delta.content, 'echo: ');
+  assert.strictEqual(events[1].choices[0].delta.content, 'ccbi@example.comabcdef');
+});
+
+test('wrapResponse restores single-event content and passes unmodified events through byte-identical', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const hit = chunkEvent({ id: 'c', choices: [{ index: 0, delta: { content: 'mail u8ol4n@example.com' } }] });
+  const wrapped = wrapResponse(sseResponse(hit + 'data: [DONE]\n\n'), session);
+  const text = await new Response(wrapped.body).text();
+  assert.ok(text.includes('mail ccbi@example.com'), 'single-event content restore');
+  assert.ok(!text.includes('u8ol4n@example.com'));
+});
+
+test('wrapResponse passes a fully unmodified SSE stream through byte-identical', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const body =
+    chunkEvent({ id: 'c', choices: [{ index: 0, delta: { role: 'assistant', content: '' } }] }) +
+    chunkEvent({ id: 'c', choices: [{ index: 0, delta: { content: 'The answer is 42' } }] }) +
+    chunkEvent({ id: 'c', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }) +
+    'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":4}}\n\n' +
+    'data: [DONE]\n\n';
+
+  const wrapped = wrapResponse(sseResponse(body), session);
+  const text = await new Response(wrapped.body).text();
+  assert.strictEqual(text, body, 'raw bytes equal input when nothing is restored or held back');
+});
+
+test('wrapResponse restores reasoning_content', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const ev = chunkEvent({
+    choices: [{ index: 0, delta: { reasoning_content: 'the user mail is u8ol4n@example.com, hmm' } }],
+  });
+  const wrapped = wrapResponse(sseResponse(ev + 'data: [DONE]\n\n'), session);
+  const text = await new Response(wrapped.body).text();
+
+  assert.ok(text.includes('the user mail is ccbi@example.com, hmm'), 'reasoning_content restored');
+  assert.ok(!text.includes('u8ol4n@example.com'), 'masked value replaced');
+});
+
+test('wrapResponse restores tool_calls arguments split across fragments', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const ev1 = chunkEvent({
+    id: 'c',
+    created: 1,
+    model: 'm',
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            { index: 0, id: 'call_1', type: 'function', function: { name: 'send_mail', arguments: '{"email": "u8ol4n@ex' } },
+          ],
+        },
+      },
+    ],
+  });
+  const ev2 = chunkEvent({
+    id: 'c',
+    created: 1,
+    model: 'm',
+    choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: 'ample.com"}' } }] } }],
+  });
+
+  const wrapped = wrapResponse(sseResponse(ev1 + ev2 + 'data: [DONE]\n\n'), session);
+  const text = await new Response(wrapped.body).text();
+
+  const fragments = [];
+  for (const obj of parseDataEvents(text)) {
+    for (const choice of obj.choices || []) {
+      for (const tc of choice.delta?.tool_calls || []) {
+        if (typeof tc.function?.arguments === 'string') fragments.push(tc.function.arguments);
+      }
+    }
+  }
+  assert.deepStrictEqual(fragments.length, 2, 'both fragments emitted, none dropped');
+  const joined = fragments.join('');
+  assert.deepStrictEqual(
+    JSON.parse(joined),
+    { email: 'ccbi@example.com' },
+    'emitted fragments concatenate to valid restored JSON'
+  );
+  assert.ok(!text.includes('u8ol4n@example.com'), 'no residual masked value');
+});
+
+test('wrapResponse handles CRLF line endings', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const plain = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'plain text' } }] })}`;
+  const hit = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'mail u8ol4n@example.com' } }] })}`;
+  const body = `${plain}\r\n\r\n${hit}\r\n\r\ndata: [DONE]\r\n\r\n`;
+
+  const wrapped = wrapResponse(sseResponse(body), session);
+  const text = await new Response(wrapped.body).text();
+
+  assert.ok(text.includes(`${plain}\r\n\r\n`), 'unmodified CRLF event passes through byte-identical');
+  assert.ok(text.includes('mail ccbi@example.com'), 'CRLF event restored');
+  assert.ok(text.endsWith('data: [DONE]\r\n\r\n'), '[DONE] byte-identical with CRLF');
+});
+
+test('wrapResponse passes SSE keep-alive comments through immediately', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+  let openGate;
+  const gate = new Promise((resolve) => {
+    openGate = resolve;
+  });
+  const response = new Response(
+    new ReadableStream({
+      async start(c) {
+        c.enqueue(enc.encode(': keep-alive\n\n'));
+        await gate; // hold the rest of the stream until the test allows it
+        c.enqueue(enc.encode(chunkEvent({ choices: [{ index: 0, delta: { content: 'hi u8ol4n@example.com' } }] })));
+        c.enqueue(enc.encode('data: [DONE]\n\n'));
+        c.close();
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } }
+  );
+
+  const wrapped = wrapResponse(response, session);
+  const reader = wrapped.body.getReader();
+
+  // The comment must arrive BEFORE the gate opens — never buffered.
+  const first = await reader.read();
+  assert.ok(dec.decode(first.value).includes('keep-alive'), 'comment emitted before stream end');
+
+  openGate();
+  let rest = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    rest += dec.decode(value);
+  }
+  assert.ok(rest.includes('hi ccbi@example.com'), 'post-gate event restored');
+  assert.ok(rest.endsWith('data: [DONE]\n\n'), '[DONE] byte-identical');
+});
+
+test('wrapResponse merges held-back remainder into the finish chunk when [DONE] is missing', async () => {
+  const session = makeSession();
+  addMapping(session, 'ghp_abc123def456', 'tok-secret-value');
+
+  const ev1 = chunkEvent({ id: 'c', created: 1, model: 'm', choices: [{ index: 0, delta: { content: 'see ghp_abc123' } }] });
+  const finish = chunkEvent({ id: 'c', created: 1, model: 'm', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+
+  // Stream ends without [DONE].
+  const wrapped = wrapResponse(sseResponse(ev1 + finish), session);
+  const text = await new Response(wrapped.body).text();
+
+  assert.ok(text.includes('ghp_abc123'), 'held-back bytes surface, no byte loss');
+  const events = parseDataEvents(text);
+  assert.strictEqual(events.length, 2, 'remainder merged into the finish chunk, no synthetic chunk needed');
+  assert.strictEqual(events[1].choices[0].finish_reason, 'stop');
+  assert.strictEqual(events[1].choices[0].delta.content, 'ghp_abc123', 'remainder merged verbatim into finish chunk delta');
+});
+
+test('wrapResponse flushes never-completing held-back remainder into a synthetic chunk before [DONE]', async () => {
+  const session = makeSession();
+  addMapping(session, 'ghp_abc123def456', 'tok-secret-value');
+
+  const ev1 = chunkEvent({ id: 'chatcmpl-9', created: 7, model: 'm', choices: [{ index: 0, delta: { content: 'see ghp_abc123' } }] });
+  const done = 'data: [DONE]\n\n';
+
+  const wrapped = wrapResponse(sseResponse(ev1 + done), session);
+  const text = await new Response(wrapped.body).text();
+
+  assert.ok(text.endsWith(done), '[DONE] byte-identical and last');
+  assert.ok(text.includes('ghp_abc123'), 'held-back remainder flushed verbatim, no byte loss');
+
+  const blocks = text.split('\n\n').filter(Boolean);
+  assert.strictEqual(blocks.length, 3, 're-serialized event, synthetic chunk, [DONE]');
+  const synth = JSON.parse(blocks[1].slice('data: '.length));
+  assert.strictEqual(synth.id, 'chatcmpl-9', 'synthetic chunk cloned from last seen chunk');
+  assert.strictEqual(synth.created, 7);
+  assert.strictEqual(synth.model, 'm');
+  assert.strictEqual(synth.choices[0].delta.content, 'ghp_abc123', 'remainder emitted verbatim (never completed)');
+  assert.strictEqual(synth.choices[0].finish_reason, null);
+});
+
+test('wrapResponse passes malformed JSON and non-chunk events through unchanged', async () => {
+  const session = makeSession();
+  addMapping(session, 'u8ol4n@example.com', 'ccbi@example.com');
+
+  const bad = 'data: {not json}\n\n';
+  const err = 'data: {"error":{"message":"boom"}}\n\n';
+  const nonChunk = 'data: {"delta":{"content":"u8ol4n@example.com"}}\n\n';
+  const done = 'data: [DONE]\n\n';
+
+  const wrapped = wrapResponse(sseResponse(bad + err + nonChunk + done), session);
+  const text = await new Response(wrapped.body).text();
+  assert.strictEqual(text, bad + err + nonChunk + done, 'unparseable / non-chunk events pass through verbatim');
 });
