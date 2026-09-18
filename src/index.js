@@ -19,24 +19,50 @@ export const OpenCodeGuard = async (ctx) => {
   const core = await createGuardCore(ctx.directory);
   if (!core) return {};
 
-  const { config, debug, logger, patterns, aiDetector, getSession, isExcludedEndpoint, isExcludedMcpServer, isExcludedMcpTool } = core;
+  const { config, debug, logger, patterns, aiDetector, getSession, createEphemeralSession, isExcludedEndpoint, isExcludedMcpServer, isExcludedMcpTool } = core;
 
-  const streamingUnmaskers = new Map();
+  /**
+   * Idle TTL for v1 streaming unmaskers. Entries are dropped lazily (on
+   * access) when no chunk/stream.end has touched them for this long, so a
+   * stream whose stream.end hook never fires does not leak forever.
+   */
+  const STREAMING_UNMASKER_TTL_MS = 60 * 60 * 1000; // 1h
+
+  /**
+   * KNOWN LIMITATION (M12): v1 streaming unmaskers are keyed by sessionID
+   * only. The v1 chunk payload exposes no messageID/requestID, so two
+   * concurrent streams within the same session share one unmasker and may
+   * interleave buffered tail bytes. v2 (http.response wrapping) does not
+   * have this limitation.
+   */
+  const streamingUnmaskers = new Map(); // key -> { unmasker, lastAccess }
+
+  const purgeIdleStreamingUnmaskers = (now = Date.now()) => {
+    for (const [key, entry] of streamingUnmaskers) {
+      if (now - entry.lastAccess > STREAMING_UNMASKER_TTL_MS) {
+        streamingUnmaskers.delete(key);
+        if (debug) logger.log(`[opencode-guard] dropped idle streaming unmasker (>${STREAMING_UNMASKER_TTL_MS}ms)`);
+      }
+    }
+  };
 
   const getStreamingUnmasker = (sessionID) => {
     const key = String(sessionID ?? '');
     if (!key) return null;
 
-    let unmasker = streamingUnmaskers.get(key);
-    if (unmasker && !unmasker.isClosed()) {
-      return unmasker;
+    purgeIdleStreamingUnmaskers();
+
+    let entry = streamingUnmaskers.get(key);
+    if (entry && !entry.unmasker.isClosed()) {
+      entry.lastAccess = Date.now();
+      return entry.unmasker;
     }
 
     const session = getSession(sessionID);
     if (!session) return null;
 
-    unmasker = new StreamingUnmasker(session);
-    streamingUnmaskers.set(key, unmasker);
+    const unmasker = new StreamingUnmasker(session);
+    streamingUnmaskers.set(key, { unmasker, lastAccess: Date.now() });
     return unmasker;
   };
 
@@ -53,10 +79,13 @@ export const OpenCodeGuard = async (ctx) => {
         return;
       }
 
-      const session = getSession(sessionID);
+      let session = getSession(sessionID);
       if (!session) {
-        if (debug) logger.log(`[opencode-guard] chat.transform: no session for ${sessionID}`);
-        return;
+        // Fail-closed: no sessionID means no persistent session, but the
+        // request must still be masked. Use a per-request ephemeral session
+        // (discarded afterwards; masked values cannot be restored).
+        if (debug) logger.log(`[opencode-guard] chat.transform: no sessionID (${sessionID}); masking with ephemeral session (no restore possible)`);
+        session = createEphemeralSession();
       }
 
       let changedCount = 0;
@@ -130,7 +159,14 @@ export const OpenCodeGuard = async (ctx) => {
       if (!output || typeof output !== 'object') return;
       if (typeof output.text !== 'string') return;
 
-      const unmasker = getStreamingUnmasker(input?.sessionID);
+      if (!input?.sessionID) {
+        // No sessionID: masked text passes through unrestored (fail-safe
+        // direction), but make it observable in debug output.
+        if (debug) logger.log('[opencode-guard] text.chunk: no sessionID; chunk left as-is (masked values stay masked)');
+        return;
+      }
+
+      const unmasker = getStreamingUnmasker(input.sessionID);
       if (!unmasker) return;
 
       const before = output.text;
@@ -141,13 +177,24 @@ export const OpenCodeGuard = async (ctx) => {
       }
     },
 
-    'experimental.stream.end': async (input) => {
+    'experimental.stream.end': async (input, output) => {
       const key = String(input?.sessionID ?? '');
       if (!key) return;
 
-      const unmasker = streamingUnmaskers.get(key);
-      if (unmasker && !unmasker.isClosed()) {
-        streamingUnmaskers.delete(key);
+      const entry = streamingUnmaskers.get(key);
+      // Delete unconditionally: a closed unmasker must not linger in the map.
+      streamingUnmaskers.delete(key);
+      if (!entry) return;
+
+      // Flush held tail bytes so the end of the stream is not dropped.
+      const tail = entry.unmasker.flush();
+      if (!tail) return;
+
+      if (output && typeof output.text === 'string') {
+        output.text += tail;
+        if (debug) logger.log(`[opencode-guard] stream.end: flushed ${tail.length} buffered bytes into output`);
+      } else if (debug) {
+        logger.log(`[opencode-guard] stream.end: flushed ${tail.length} buffered bytes (no writable output field; bytes kept in stream buffer until now)`);
       }
     },
 
@@ -161,9 +208,17 @@ export const OpenCodeGuard = async (ctx) => {
       }
 
       if (output?.args && typeof output.args === 'object') {
-        const isLocal = isExcludedMcpServer(serverName) || isExcludedMcpTool(toolName);
-        if (isLocal) {
-          const reason = isExcludedMcpServer(serverName) ? `server ${serverName}` : `tool ${toolName}`;
+        // v1 toolName may carry the `<server>_<tool>` prefix (v2 parity):
+        // strip it so exclusions are evaluated on the bare tool name.
+        const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const prefix = serverName ? `${sanitize(serverName)}_` : '';
+        const shortName = toolName && prefix && String(toolName).startsWith(prefix)
+          ? String(toolName).slice(prefix.length)
+          : String(toolName ?? '');
+
+        const excluded = isExcludedMcpServer(serverName) || isExcludedMcpTool(serverName, shortName, toolName);
+        if (excluded) {
+          const reason = isExcludedMcpServer(serverName) ? `server ${serverName}` : `tool ${shortName}`;
           if (debug) logger.log(`[opencode-guard] mcp.tool.call.before: restoring args for local ${reason}`, JSON.stringify(output.args));
           restoreDeep(output.args, session, new WeakSet(), debug);
           if (debug) logger.log(`[opencode-guard] mcp.tool.call.before: restored args`, JSON.stringify(output.args));
@@ -201,10 +256,8 @@ export const OpenCodeGuard = async (ctx) => {
       if (output?.args && typeof output.args === 'object') {
         if (debug) {
           logger.log(`[opencode-guard] tool.execute.before: restoring args`, JSON.stringify(output.args));
+          // Never dump the mapping table here - it contains plaintext secrets.
           logger.log(`[opencode-guard] tool.execute.before: session has ${session.maskedToOriginal.size} mappings`);
-          for (const [masked, original] of session.maskedToOriginal) {
-            logger.log(`[opencode-guard]   mapping: "${masked}" -> "${original}"`);
-          }
         }
         restoreDeep(output.args, session, new WeakSet(), debug);
         if (debug) logger.log(`[opencode-guard] tool.execute.before: restored args`, JSON.stringify(output.args));
@@ -223,6 +276,13 @@ export const OpenCodeGuard = async (ctx) => {
         if (debug) logger.log(`[opencode-guard] tool.execute.after: masking result`);
         await redactDeep(output.result, patterns, session, aiDetector);
         if (debug) logger.log(`[opencode-guard] tool.execute.after: masked result`);
+      }
+
+      // v2 parity: error payloads can contain secrets too
+      if (output?.error !== undefined && output.error !== null) {
+        if (debug) logger.log(`[opencode-guard] tool.execute.after: masking error`);
+        output.error = await redactDeep(output.error, patterns, session, aiDetector);
+        if (debug) logger.log(`[opencode-guard] tool.execute.after: masked error`);
       }
     },
   };

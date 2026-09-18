@@ -214,9 +214,9 @@ opencode
 > **OpenCode v2**: plugin console output is invisible under v2. Use file logging instead:
 > ```bash
 > export OPENCODE_GUARD_DEBUG=1
-> export OPENCODE_GUARD_DEBUG_FILE=/tmp/opencode-guard-debug.log
+> export OPENCODE_GUARD_DEBUG_FILE=~/.config/opencode/opencode-guard-debug.log
 > ```
-> ⚠️ The debug file may contain masked→original mappings and other sensitive values — enable it only temporarily and delete the file after debugging.
+> ⚠️ **The debug file contains plaintext secrets** (masked→original mappings). The file is truncated on every startup and created with permissions `0600`; relative paths are rejected. Enable it only temporarily and **delete the file after debugging**.
 
 Common causes:
 - `enabled: false` is explicitly set in your config (the plugin is enabled by default)

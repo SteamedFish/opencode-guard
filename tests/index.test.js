@@ -1229,3 +1229,361 @@ test('OpenCodeGuard handles custom maskers', async () => {
     await cleanup(tempDir);
   }
 });
+
+test('OpenCodeGuard experimental.stream.end flushes buffered tail bytes', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] }
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transform = plugin['experimental.chat.messages.transform'];
+    const chunk = plugin['experimental.text.chunk'];
+    const streamEnd = plugin['experimental.stream.end'];
+
+    // Establish a mapping
+    const output = {
+      messages: [{
+        info: { sessionID: 'flush-test' },
+        parts: [{ type: 'text', text: 'Email: user@example.com' }]
+      }]
+    };
+    await transform({}, output);
+    const maskedEmail = output.messages[0].parts[0].text.match(/[\w._-]+@example\.com/)[0];
+    assert.ok(maskedEmail !== 'user@example.com');
+
+    // Feed a truncated masked email: not a complete token, so the streaming
+    // unmasker holds it back as a potential partial token
+    const partial = maskedEmail.slice(0, -1);
+    const chunkOutput = { text: partial };
+    await chunk({ sessionID: 'flush-test' }, chunkOutput);
+    assert.strictEqual(chunkOutput.text, '', 'partial token should be buffered');
+
+    // stream.end must flush the held bytes; with a writable output they are appended
+    const endOutput = { text: '' };
+    await streamEnd({ sessionID: 'flush-test' }, endOutput);
+    assert.strictEqual(endOutput.text, partial, 'flushed tail should be appended to output');
+
+    // Map entry removed: a new chunk for the same session creates a fresh unmasker
+    const afterOutput = { text: 'plain text' };
+    await chunk({ sessionID: 'flush-test' }, afterOutput);
+    assert.strictEqual(afterOutput.text, 'plain text');
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard experimental.stream.end removes closed unmaskers from the map', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] }
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const streamEnd = plugin['experimental.stream.end'];
+    const chunk = plugin['experimental.text.chunk'];
+
+    // Create an unmasker, close it via stream.end (flush), then end again:
+    // the second call must be a no-op (entry already deleted, not lingering closed).
+    await chunk({ sessionID: 'closed-test' }, { text: 'hello world' });
+    await streamEnd({ sessionID: 'closed-test' }, { text: '' });
+    await streamEnd({ sessionID: 'closed-test' }, { text: '' }); // must not throw
+
+    // A fresh unmasker is created on the next chunk
+    const afterOutput = { text: 'still works' };
+    await chunk({ sessionID: 'closed-test' }, afterOutput);
+    assert.strictEqual(afterOutput.text, 'still works');
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard transform masks with ephemeral session when sessionID is missing', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] }
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transform = plugin['experimental.chat.messages.transform'];
+
+    const output = {
+      messages: [{
+        info: {}, // No sessionID anywhere
+        parts: [{ type: 'text', text: 'Contact user@example.com' }]
+      }]
+    };
+
+    await transform({}, output);
+    assert.ok(
+      !output.messages[0].parts[0].text.includes('user@example.com'),
+      'request without sessionID must still be masked (fail closed)'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard tool.execute.after masks error field', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] }
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const afterHook = plugin['tool.execute.after'];
+
+    const output = { error: 'Failed to reach admin@company.com' };
+    await afterHook({ sessionID: 'test-session' }, output);
+
+    assert.ok(!output.error.includes('admin@company.com'), 'error field should be masked');
+    assert.ok(output.error.includes('@company.com'), 'domain should be preserved');
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard endpoint exclusion uses hostname matching (evil subdomain suffix NOT excluded)', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] },
+    exclude_llm_endpoints: ['api.openai.com']
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transform = plugin['experimental.chat.messages.transform'];
+
+    // Attacker host that merely ends with the excluded domain as a substring
+    const evilHost = 'api.openai.com' + '.evil' + '.tld';
+    const email = 'qvygf' + '@' + 'company.com';
+    const output = {
+      messages: [{
+        info: { sessionID: 'test-session', endpoint: 'https://' + evilHost + '/v1' },
+        parts: [{ type: 'text', text: 'Contact ' + email }]
+      }]
+    };
+    await transform({}, output);
+    assert.ok(
+      !output.messages[0].parts[0].text.includes(email),
+      'api.openai.com.evil.tld must NOT be excluded by an api.openai.com entry'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard endpoint exclusion matches subdomains of excluded domain', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] },
+    exclude_llm_endpoints: ['api.openai.com']
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transform = plugin['experimental.chat.messages.transform'];
+
+    const email = 'qvygf' + '@' + 'company.com';
+    const originalText = 'Contact ' + email;
+    const subHost = 'v2' + '.' + 'api.openai.com';
+    const output = {
+      messages: [{
+        info: { sessionID: 'test-session', endpoint: 'https://' + subHost + '/v1' },
+        parts: [{ type: 'text', text: originalText }]
+      }]
+    };
+    await transform({}, output);
+    assert.strictEqual(
+      output.messages[0].parts[0].text,
+      originalText,
+      'subdomain of an excluded domain should be excluded'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard empty endpoint exclusion entry does not disable all masking', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] },
+    exclude_llm_endpoints: ['']
+  });
+
+  const originalWarn = console.warn;
+  console.warn = () => {}; // silence the empty-entry rejection warning
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transform = plugin['experimental.chat.messages.transform'];
+
+    const email = 'qvygf' + '@' + 'company.com';
+    const apiHost = 'api.openai' + '.com';
+    const output = {
+      messages: [{
+        info: { sessionID: 'test-session', endpoint: 'https://' + apiHost + '/v1' },
+        parts: [{ type: 'text', text: 'Contact ' + email }]
+      }]
+    };
+    await transform({}, output);
+    assert.ok(
+      !output.messages[0].parts[0].text.includes(email),
+      'empty exclusion entries must not exclude everything'
+    );
+  } finally {
+    console.warn = originalWarn;
+    await cleanup(tempDir);
+  }
+});
+
+
+test('OpenCodeGuard mcp.tool.call.before does not restore for external server with bare default tool name', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] }
+    // exclude_mcp_tools defaults include bare 'run_job'; server must NOT inherit trust from it
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transformHook = plugin['experimental.chat.messages.transform'];
+    const beforeHook = plugin['mcp.tool.call.before'];
+
+    const output = {
+      messages: [{
+        info: { sessionID: 'test-session' },
+        parts: [{ type: 'text', text: 'Contact user@example.com' }]
+      }]
+    };
+    await transformHook({}, output);
+    const maskedEmail = output.messages[0].parts[0].text.match(/[\w._-]+@example\.com/)[0];
+
+    const mcpOutput = { args: { email: maskedEmail } };
+    await beforeHook({ sessionID: 'test-session', serverName: 'evil-remote', toolName: 'run_job' }, mcpOutput);
+
+    assert.ok(
+      !String(mcpOutput.args.email).includes('user@example.com'),
+      'external server must NOT get originals via bare tool-name default (confused deputy)'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard mcp.tool.call.before restores for excluded server with bare tool name', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] },
+    exclude_mcp_servers: ['trusted-local']
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transformHook = plugin['experimental.chat.messages.transform'];
+    const beforeHook = plugin['mcp.tool.call.before'];
+
+    const output = {
+      messages: [{
+        info: { sessionID: 'test-session' },
+        parts: [{ type: 'text', text: 'Contact user@example.com' }]
+      }]
+    };
+    await transformHook({}, output);
+    const maskedEmail = output.messages[0].parts[0].text.match(/[\w._-]+@example\.com/)[0];
+
+    const mcpOutput = { args: { email: maskedEmail } };
+    await beforeHook({ sessionID: 'test-session', serverName: 'trusted-local', toolName: 'run_job' }, mcpOutput);
+
+    assert.strictEqual(mcpOutput.args.email, 'user@example.com', 'excluded server tool should be restored');
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard mcp.tool.call.before supports qualified server/tool exclusions and strips prefixes', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] },
+    exclude_mcp_tools: ['external/run_job']
+  });
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const transformHook = plugin['experimental.chat.messages.transform'];
+    const beforeHook = plugin['mcp.tool.call.before'];
+
+    const output = {
+      messages: [{
+        info: { sessionID: 'test-session' },
+        parts: [{ type: 'text', text: 'Contact user@example.com' }]
+      }]
+    };
+    await transformHook({}, output);
+    const maskedEmail = output.messages[0].parts[0].text.match(/[\w._-]+@example\.com/)[0];
+
+    // Qualified entry matches even when v1 passes the prefixed tool name
+    const mcpOutput = { args: { email: maskedEmail } };
+    await beforeHook({ sessionID: 'test-session', serverName: 'external', toolName: 'external_run_job' }, mcpOutput);
+    assert.strictEqual(mcpOutput.args.email, 'user@example.com', 'qualified server/tool entry should match (prefix stripped)');
+
+    // A different server with the same tool name is NOT excluded
+    const mcpOutput2 = { args: { email: maskedEmail } };
+    await beforeHook({ sessionID: 'test-session', serverName: 'other', toolName: 'other_run_job' }, mcpOutput2);
+    assert.ok(!String(mcpOutput2.args.email).includes('user@example.com'), 'qualified entry must not leak to other servers');
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('OpenCodeGuard text.chunk logs at debug level when sessionID is missing', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, {
+    enabled: true,
+    global_salt: 'test-salt-1234567890abcdef',
+    patterns: { builtin: ['email'] },
+    debug: true
+  });
+
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...args) => logs.push(args.join(' '));
+
+  try {
+    const plugin = await OpenCodeGuard({ directory: tempDir });
+    const chunk = plugin['experimental.text.chunk'];
+
+    const output = { text: 'masked text passes through' };
+    await chunk({}, output);
+
+    assert.strictEqual(output.text, 'masked text passes through');
+    assert.ok(logs.some((l) => l.includes('text.chunk') && l.includes('no sessionID')), 'debug log expected for missing sessionID');
+  } finally {
+    console.log = originalLog;
+    await cleanup(tempDir);
+  }
+});
