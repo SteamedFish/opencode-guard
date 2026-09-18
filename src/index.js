@@ -1,14 +1,11 @@
-import { loadConfig } from './config.js';
-import { buildPatternSet } from './patterns.js';
-import { MaskSession } from './session.js';
+import { createGuardCore } from './guard-core.js';
+import { setupV2 } from './v2.js';
 import { redactText, redactDeep } from './engine.js';
 import { restoreText, restoreDeep } from './restore.js';
-import { initializeCustomMaskers } from './maskers/index.js';
 import { StreamingUnmasker } from './streaming-unmasker.js';
-import { AIDetector } from './ai-detector/index.js';
 
 /**
- * OpenCode Guard Plugin
+ * OpenCode Guard Plugin (v1 API)
  *
  * Privacy-focused plugin for OpenCode that automatically masks sensitive data
  * before it reaches LLM providers and MCP servers. Uses format-preserving masking
@@ -19,77 +16,12 @@ import { AIDetector } from './ai-detector/index.js';
  * @returns {Object} Plugin hooks
  */
 export const OpenCodeGuard = async (ctx) => {
-  const config = await loadConfig(ctx.directory);
-  const debug = Boolean(process.env.OPENCODE_GUARD_DEBUG) || config.debug;
+  const core = await createGuardCore(ctx.directory);
+  if (!core) return {};
 
-  if (debug) {
-    const from = config.loadedFrom ? config.loadedFrom : 'not found (plugin disabled)';
-    console.log(`[opencode-guard] config: ${from}, enabled=${config.enabled}`);
-  }
+  const { config, debug, patterns, aiDetector, getSession, isExcludedEndpoint, isExcludedMcpServer, isExcludedMcpTool } = core;
 
-  if (!config.enabled || !config.globalSalt) {
-    return {};
-  }
-
-  initializeCustomMaskers(config.customMaskers);
-
-  // Initialize AI detector if enabled
-  let aiDetector = null;
-  let aiDetectionReady = false;
-  if (config.detection?.aiDetection) {
-    aiDetector = new AIDetector({
-      provider: config.detection.aiProvider,
-      timeoutMs: config.detection.aiTimeoutMs,
-      autoInstallDeps: config.detection.autoInstallDeps,
-      localModel: config.detection.localModel,
-    });
-
-    if (debug) {
-      console.log(`[opencode-guard] AI detection enabled (${config.detection.aiProvider})`);
-      if (config.detection.autoInstallDeps) {
-        console.log(`[opencode-guard] Auto-install enabled for AI dependencies`);
-      }
-    }
-
-    // Eagerly initialize AI detector so auto-install happens on startup
-    try {
-      await aiDetector.initialize();
-      aiDetectionReady = true;
-      if (debug) {
-        console.log(`[opencode-guard] AI detector initialized successfully`);
-      }
-    } catch (err) {
-      if (debug) {
-        console.warn(`[opencode-guard] AI detector initialization failed: ${err.message}`);
-        if (!config.detection.autoInstallDeps) {
-          console.log(`[opencode-guard] Tip: Set auto_install_deps: true to automatically install missing dependencies`);
-        }
-      }
-      // Don't throw - plugin should work without AI detection
-    }
-  }
-
-  const patterns = buildPatternSet(config.patterns);
-  const sessions = new Map();
   const streamingUnmaskers = new Map();
-
-  const getSession = (sessionID) => {
-    const key = String(sessionID ?? '');
-    if (!key) return null;
-
-    let session = sessions.get(key);
-    if (session) {
-      session.cleanup();
-      return session;
-    }
-
-    session = new MaskSession(config.globalSalt, {
-      ttlMs: config.ttlMs,
-      maxMappings: config.maxMappings,
-    });
-    sessions.set(key, session);
-    return session;
-  };
 
   const getStreamingUnmasker = (sessionID) => {
     const key = String(sessionID ?? '');
@@ -106,23 +38,6 @@ export const OpenCodeGuard = async (ctx) => {
     unmasker = new StreamingUnmasker(session);
     streamingUnmaskers.set(key, unmasker);
     return unmasker;
-  };
-
-  const isExcludedEndpoint = (endpoint) => {
-    if (!endpoint) return false;
-    return config.excludeLlmEndpoints.some(excluded => 
-      endpoint.includes(excluded) || excluded.includes(endpoint)
-    );
-  };
-
-  const isExcludedMcpServer = (server) => {
-    if (!server) return false;
-    return config.excludeMcpServers.includes(server);
-  };
-
-  const isExcludedMcpTool = (tool) => {
-    if (!tool) return false;
-    return config.excludeMcpTools.includes(tool);
   };
 
   return {
@@ -313,4 +228,13 @@ export const OpenCodeGuard = async (ctx) => {
   };
 };
 
-export default OpenCodeGuard;
+/**
+ * Dual-compat plugin entry point:
+ * - OpenCode v2 calls `setup(ctx)` (Plugin.define-style object)
+ * - OpenCode v1 (>=1.18.29) calls `server(ctx)`
+ */
+export default {
+  id: 'opencode-guard',
+  setup: setupV2,
+  server: OpenCodeGuard,
+};
