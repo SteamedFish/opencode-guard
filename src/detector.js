@@ -9,19 +9,29 @@ export async function detectSensitiveData(text, patterns, aiDetector = null) {
   const seen = new Set();
   
   for (const rule of (patterns.regex || [])) {
-    const regex = new RegExp(rule.regex.source, rule.regex.flags);
+    const regex = rule.regex;
+    // Regexes are per-config singletons used synchronously here; reset state
+    // instead of rebuilding a fresh RegExp per call.
+    regex.lastIndex = 0;
+    // Case-insensitive rules need a case-insensitive exclude check; precompute
+    // the lowercased view once per rule instead of per match.
+    let excludeLower = null;
+    if (regex.ignoreCase && patterns.exclude?.size) {
+      excludeLower = new Set([...patterns.exclude].map(e => e.toLowerCase()));
+    }
     let match;
-    let lastIndex = -1;
     while ((match = regex.exec(text)) !== null) {
       const matchedText = match[0];
 
-      if (match.index === lastIndex) {
+      // Zero-width matches must never be recorded; advance to avoid an
+      // infinite loop on patterns like /a*/g.
+      if (matchedText.length === 0) {
         regex.lastIndex++;
         continue;
       }
-      lastIndex = match.index;
 
       if (patterns.exclude?.has(matchedText)) continue;
+      if (excludeLower?.has(matchedText.toLowerCase())) continue;
 
       const key = `${match.index}-${match.index + matchedText.length}`;
       if (!seen.has(key)) {
@@ -39,10 +49,11 @@ export async function detectSensitiveData(text, patterns, aiDetector = null) {
   
   for (const keyword of (patterns.keywords || [])) {
     const value = keyword.value;
+    // Excluded keywords must be skipped before scanning; checking inside the
+    // loop without advancing `pos` would loop forever.
+    if (patterns.exclude?.has(value)) continue;
     let pos = 0;
     while ((pos = text.indexOf(value, pos)) !== -1) {
-      if (patterns.exclude?.has(value)) continue;
-      
       const key = `${pos}-${pos + value.length}`;
       if (!seen.has(key)) {
         seen.add(key);
