@@ -117,3 +117,23 @@ masked token the plugin just registered — so the displayed `echo:` line proves
     have JSON/SSE framing between them, so a key split across events is never
     contiguous in raw bytes. When testing restore, always include a probe where
     the masked value is split across two SSE events (capture-server `--mode=echo-split`).
+
+## Pitfalls — round 3 (all hit in practice, 2026-09-19)
+
+13. **opencode's `write` tool rejects relative `filePath`** ("Update the
+    arguments and call the tool again"). For tool-arg restoration probes use
+    the shell tool with `printf ... > file` (relative paths resolve against
+    the opencode project cwd), or emit an absolute path.
+14. **Tool names and schemas vary by distribution/agent**: OMO slim names the
+    shell tool `shell` (not `bash`), and opencode tool schemas use
+    `additionalProperties: false` — an extra arg field (e.g. `description`)
+    fails validation with the same generic "Update the arguments" error.
+    Always dump the request's actual tools array from capture.log before
+    assuming names/schemas; use capture-server `--prefer-tool=NAME`.
+15. **opencode server restarts kill nohup'd background processes** (they die
+    with the server's process tree). Start the capture server fully detached:
+    `setsid nohup python3 ... < /dev/null > log 2>&1 & disown`.
+16. **`\w` in this environment's `grep -E` does not work** (GNU-extension
+    assumption fails; count came back 0 for a matching line). Use POSIX
+    classes: `grep -cE '[[:alnum:]._%+-]+@[[:alnum:].-]+'`. (Python `re` `\w`
+    is fine — capture-server's EMAIL_RE is unaffected.)
