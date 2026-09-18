@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import { parseDuration, loadConfig } from '../src/config.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { writeFile, unlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile, unlink, readFile, rm, mkdtemp } from 'node:fs/promises';
+import { tmpdir, homedir } from 'node:os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,6 +33,27 @@ test('loadConfig returns disabled config when plugin is disabled', async () => {
     assert.strictEqual(config.enabled, false);
     assert.strictEqual(config.debug, false);
     assert.strictEqual(config.debugFile, '');
+    assert.strictEqual(config.loadedFrom, tempConfig);
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    await unlink(tempConfig).catch(() => {});
+  }
+});
+
+test('loadConfig defaults enabled to true when config file has no enabled key', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}-noenabled.json`);
+  await writeFile(tempConfig, JSON.stringify({ global_salt: 'test-salt' }));
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.enabled, true);
+    assert.strictEqual(config.globalSalt, 'test-salt');
     assert.strictEqual(config.loadedFrom, tempConfig);
   } finally {
     if (originalEnv !== undefined) {
@@ -161,3 +182,79 @@ test('loadConfig defaults debugFile to empty string', async () => {
     await unlink(tempConfig).catch(() => {});
   }
 });
+
+test('loadConfig generates default config on first run and is idempotent', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalHome = process.env.HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), 'opencode-guard-home-'));
+  delete process.env.OPENCODE_GUARD_CONFIG;
+  process.env.HOME = fakeHome;
+
+  const expectedPath = join(fakeHome, '.config', 'opencode', 'opencode-guard.config.json');
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.enabled, true);
+    assert.strictEqual(config.generated, true);
+    assert.strictEqual(typeof config.globalSalt, 'string');
+    assert.match(config.globalSalt, /^[0-9a-f]{64}$/);
+    assert.strictEqual(config.loadedFrom, expectedPath);
+
+    // File actually landed on disk and contains the same salt
+    const onDisk = JSON.parse(await readFile(expectedPath, 'utf-8'));
+    assert.strictEqual(onDisk.global_salt, config.globalSalt);
+
+    // Second call reads the generated file and keeps the same salt
+    const config2 = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config2.enabled, true);
+    assert.strictEqual(config2.generated, undefined);
+    assert.strictEqual(config2.globalSalt, config.globalSalt);
+    assert.strictEqual(config2.loadedFrom, expectedPath);
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    if (originalHome !== undefined) {
+      process.env.HOME = originalHome;
+    } else {
+      delete process.env.HOME;
+    }
+    await rm(fakeHome, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('loadConfig falls back to ephemeral salt when config write fails', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalHome = process.env.HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), 'opencode-guard-home-'));
+  delete process.env.OPENCODE_GUARD_CONFIG;
+  process.env.HOME = fakeHome;
+
+  // Block the .config path with a regular file so mkdir fails
+  const blockingFile = join(fakeHome, '.config');
+  await writeFile(blockingFile, 'not a directory');
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.enabled, true);
+    assert.strictEqual(config.generated, false);
+    assert.strictEqual(config.ephemeral, true);
+    assert.strictEqual(config.loadedFrom, null);
+    assert.match(config.globalSalt, /^[0-9a-f]{64}$/);
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    if (originalHome !== undefined) {
+      process.env.HOME = originalHome;
+    } else {
+      delete process.env.HOME;
+    }
+    await rm(fakeHome, { recursive: true, force: true }).catch(() => {});
+  }
+});
+

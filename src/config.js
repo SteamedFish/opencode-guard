@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { randomBytes } from 'node:crypto';
 
 const DEFAULT_LOCAL_MCP_TOOLS = [
   'submit_plan',
@@ -60,17 +61,51 @@ async function findConfigFile(projectRoot) {
   return null;
 }
 
+const GENERATED_CONFIG_BASENAME = 'opencode-guard.config.json';
+
+/**
+ * First-run bootstrap: generate a minimal config file with a random salt in
+ * ~/.config/opencode/. On write failure, fall back to an ephemeral in-memory
+ * salt so the plugin stays enabled.
+ *
+ * @returns {Promise<{path: string, content: object, generated: boolean, ephemeral?: boolean}>}
+ */
+async function generateDefaultConfig() {
+  const configDir = join(homedir(), '.config', 'opencode');
+  const configPath = join(configDir, GENERATED_CONFIG_BASENAME);
+  const salt = randomBytes(32).toString('hex');
+  const content = { global_salt: salt };
+
+  try {
+    await mkdir(configDir, { recursive: true });
+    const serialized = JSON.stringify(content, null, 2) + '\n';
+    await writeFile(configPath, serialized, { mode: 0o600 });
+    return { path: configPath, content, generated: true };
+  } catch (err) {
+    console.warn(
+      `[opencode-guard] Failed to write default config to ${configPath}: ${err?.message || err}. ` +
+      'Falling back to an ephemeral in-memory salt.'
+    );
+    return { path: null, content, generated: false, ephemeral: true };
+  }
+}
+
 export async function loadConfig(projectRoot) {
-  const found = await findConfigFile(projectRoot);
-  
+  let found = await findConfigFile(projectRoot);
+
   if (!found) {
-    return { enabled: false, debug: false, debugFile: '', loadedFrom: null };
+    found = await generateDefaultConfig();
   }
 
   const raw = found.content;
+  const extra = {};
+
+  if (found.generated !== undefined) extra.generated = found.generated;
+  if (found.ephemeral === true) extra.ephemeral = true;
 
   return {
-    enabled: Boolean(raw.enabled),
+    ...extra,
+    enabled: raw.enabled !== false,
     debug: Boolean(raw.debug),
     debugFile: String(process.env.OPENCODE_GUARD_DEBUG_FILE || raw.debug_file || ''),
     loadedFrom: found.path,
