@@ -67,6 +67,8 @@ EOF
 
 **首次运行自动生成**：如果在上述任何位置都找不到配置文件，插件会在位置 4（`~/.config/opencode/opencode-guard.config.json`）自动创建最小配置，内含随机生成的 `global_salt`（权限 `0600`），并立即启用自身。生成的文件可随时编辑。如果文件写入失败，插件会回退为内存随机盐（重启后映射失效）、打印警告，并保持启用状态。
 
+**配置损坏 = 失效关闭（fail-closed）**：如果配置文件*存在*但无法解析（JSON 无效），插件会打印错误并禁用自身。此时**不会**自动生成替代配置——自动生成仅发生在完全不存在配置文件时。请修复或删除损坏的文件。
+
 ---
 
 ## 完整配置选项
@@ -128,8 +130,8 @@ EOF
 |-----|------|--------|
 | `enabled` | 启用/禁用插件。插件默认启用，只有显式设置 `enabled: false` 才会禁用。如果完全没有配置文件，首次运行时会自动生成最小配置（见[配置文件位置](#配置文件位置)） | `true` |
 | `debug` | 启用调试日志 | `false` |
-| `debug_file` | 将调试输出追加写入此文件（仅在 `debug` 开启时生效）。在 OpenCode v2 下控制台输出不可见时尤其有用。**警告：** 文件可能包含脱敏值→原始值的映射及其他敏感内容 — 请仅在临时调试时开启，调试结束后删除该文件 | `""`（关闭） |
-| `global_salt` | **必填。** 确定性脱敏的密钥盐值。没有此项插件无法工作 | （无 — 必须设置） |
+| `debug_file` | 将调试输出追加写入此文件（仅在 `debug` 开启时生效）。在 OpenCode v2 下控制台输出不可见时尤其有用。**警告：** 文件包含明文敏感信息（脱敏值→原始值的映射）。路径必须是绝对路径（相对路径会被拒绝并告警）；文件每次启动时都会被清空（truncate），并以 `0600` 权限创建；启用文件日志时启动阶段会打印警告。请仅在临时调试时开启，调试结束后删除该文件 | `""`（关闭） |
+| `global_salt` | **必填。** 确定性脱敏的密钥盐值。没有此项插件无法工作。可被 `OPENCODE_GUARD_SALT` 环境变量覆盖（最高优先级）。如果包含盐值的配置文件可被 group/others 读取，插件会打印警告（期望权限：`0600`） | （无 — 必须设置） |
 | `session_ttl` | 会话超时（如 "1h", "30m"） | `"1h"` |
 | `max_mappings` | 每会话最大缓存映射数 | `100000` |
 | `masking.format_preserving` | 启用格式保持脱敏 | `true` |
@@ -139,9 +141,9 @@ EOF
 | `detection.ai_detection` | 启用基于 AI 的检测。**这是唯一默认关闭的功能**——其他所有功能均开箱即用 | `false` |
 | `detection.ai_provider` | AI 提供商："local", "openai", 或 "custom" | `"local"` |
 | `detection.ai_timeout_ms` | AI 检测超时时间（毫秒） | `500` |
-| `exclude_llm_endpoints` | 跳过脱敏的 LLM 端点 | `[]` |
+| `exclude_llm_endpoints` | 跳过脱敏的 LLM 端点。支持主机名或 `host:port` 条目（scheme 可选）。域名条目匹配精确主机及其子域名（如 `api.example.com` 覆盖 `v2.api.example.com`），但不会匹配无关后缀（如 `api.example.com.evil.tld` **不会**被排除）。空条目会被拒绝并告警 | `[]` |
 | `exclude_mcp_servers` | 视为"本地"的 MCP 服务器 | `[]` |
-| `exclude_mcp_tools` | 根据工具名称视为"本地"的 MCP 工具 | 内置工具 |
+| `exclude_mcp_tools` | 视为"本地"的 MCP 工具。**按服务器限定作用域：** 裸工具名仅对 `exclude_mcp_servers` 中列出的服务器生效（绝不匹配外部服务器）。如需对特定服务器上的特定工具豁免，请使用限定条目 `server/tool`（或实际的 `server_tool` 名称） | 内置工具 |
 
 ---
 
@@ -152,6 +154,7 @@ EOF
 | `OPENCODE_GUARD_CONFIG` | 配置文件的显式路径 |
 | `OPENCODE_GUARD_DEBUG` | 启用调试模式（设为 `1`） |
 | `OPENCODE_GUARD_DEBUG_FILE` | 调试日志文件路径（覆盖 `debug_file`；仅在调试开启时生效） |
+| `OPENCODE_GUARD_SALT` | 覆盖配置文件中的 `global_salt`（最高优先级） |
 
 ---
 

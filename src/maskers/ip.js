@@ -18,63 +18,44 @@ export function maskIPv4(ip, rng) {
 
 /**
  * Mask IPv6 address - keep /64 prefix, mask interface ID
- * Preserves network prefix while masking host identifier
+ * Preserves network prefix while masking host identifier.
+ * Compressed (::) notation is expanded first; the output is always
+ * emitted in full 8-group form so it is guaranteed to be a valid,
+ * parseable IPv6 address.
  * @param {string} ip
  * @param {Function} rng
  * @returns {string}
  */
 export function maskIPv6(ip, rng) {
+  const randomGroup = () => rng(0, 65535).toString(16).padStart(4, '0');
+
+  let groups;
   if (!ip.includes('::')) {
     // No compression - split normally
-    const groups = ip.split(':');
+    groups = ip.split(':');
     if (groups.length !== 8) return ip;
-    
-    const maskedInterfaceId = [];
-    for (let i = 0; i < 4; i++) {
-      const value = rng(0, 65535);
-      maskedInterfaceId.push(value.toString(16).padStart(4, '0'));
-    }
-    
-    return `${groups.slice(0, 4).join(':')}:${maskedInterfaceId.join(':')}`;
+  } else {
+    // Handle compressed notation (::): expand to 8 groups
+    const [left, right] = ip.split('::');
+    // A second '::' or no right side at all means malformed input
+    if (right === undefined || right.includes('::')) return ip;
+
+    const leftGroups = left ? left.split(':') : [];
+    const rightGroups = right ? right.split(':') : [];
+    const missingGroups = 8 - leftGroups.length - rightGroups.length;
+    if (missingGroups < 0) return ip; // malformed: too many explicit groups
+
+    groups = [...leftGroups, ...Array(missingGroups).fill('0000'), ...rightGroups];
   }
-  
-  // Handle compressed notation (::)
-  const [left, right] = ip.split('::');
-  const leftGroups = left ? left.split(':') : [];
-  const rightGroups = right ? right.split(':') : [];
-  const missingGroups = 8 - leftGroups.length - rightGroups.length;
-  
-  // Keep the prefix groups as-is (preserve original formatting)
+
+  // Keep the /64 prefix (first 4 groups, original formatting preserved),
+  // randomize the interface ID (last 4 groups)
   const maskedInterfaceId = [];
   for (let i = 0; i < 4; i++) {
-    const value = rng(0, 65535);
-    maskedInterfaceId.push(value.toString(16).padStart(4, '0'));
+    maskedInterfaceId.push(randomGroup());
   }
-  
-  // Combine: keep original left groups, add masked interface ID
-  return `${leftGroups.join(':')}:${maskedInterfaceId.join(':')}`;
-}
 
-/**
- * Expand compressed IPv6 to full 8-group format
- * @param {string} ip
- * @returns {string}
- */
-function expandIPv6(ip) {
-  if (!ip.includes('::')) {
-    // Already expanded or no compression
-    return ip.split(':').map(g => g.padStart(4, '0')).join(':');
-  }
-  
-  const [left, right] = ip.split('::');
-  const leftGroups = left ? left.split(':') : [];
-  const rightGroups = right ? right.split(':') : [];
-  const missingGroups = 8 - leftGroups.length - rightGroups.length;
-  
-  const middleGroups = Array(missingGroups).fill('0000');
-  const allGroups = [...leftGroups, ...middleGroups, ...rightGroups];
-  
-  return allGroups.map(g => g.padStart(4, '0')).join(':');
+  return `${groups.slice(0, 4).join(':')}:${maskedInterfaceId.join(':')}`;
 }
 
 /**

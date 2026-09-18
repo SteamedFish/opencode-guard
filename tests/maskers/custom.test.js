@@ -144,3 +144,65 @@ test('regex masker replaces specified groups', () => {
   assert.ok(result.startsWith('api-'));
   assert.ok(result.includes('XXX'));
 });
+
+test('regex masker throws a clear config error for an invalid pattern', () => {
+  assert.throws(
+    () => createCustomMasker({ type: 'regex', pattern: '([unclosed' }),
+    /Invalid regex pattern.*\(\[unclosed/
+  );
+});
+
+test('regex masker handles unmatched optional groups', () => {
+  const rng = () => 0;
+  const masker = createCustomMasker({
+    type: 'regex',
+    pattern: '(api-)(secret)?(123)',
+    replace_groups: [2],
+    mask_char: 'X'
+  });
+
+  // Group 2 does not participate in this match - must not crash or mask
+  assert.strictEqual(masker('api-123', rng), 'api-123');
+  // And masks correctly when the optional group is present
+  assert.strictEqual(masker('api-secret123', rng), 'api-XXXXXX123');
+});
+
+test('regex masker replaces the correct occurrence of repeated group text', () => {
+  const rng = () => 0;
+  // Groups 1 and 3 have identical text ('x'); only group 3 must be masked
+  const maskLast = createCustomMasker({
+    type: 'regex',
+    pattern: '(x)(y)(x)',
+    replace_groups: [3],
+    mask_char: '*'
+  });
+  assert.strictEqual(maskLast('xyx', rng), 'xy*', 'must mask the LAST x, not the first');
+
+  const maskFirst = createCustomMasker({
+    type: 'regex',
+    pattern: '(x)(y)(x)',
+    replace_groups: [1],
+    mask_char: '*'
+  });
+  assert.strictEqual(maskFirst('xyx', rng), '*yx', 'must mask the FIRST x');
+
+  const maskBoth = createCustomMasker({
+    type: 'regex',
+    pattern: '(x)(y)(x)',
+    replace_groups: [1, 3],
+    mask_char: '*'
+  });
+  assert.strictEqual(maskBoth('xyx', rng), '*y*');
+});
+
+test('regex masker handles named capture groups without mangling indices', () => {
+  const rng = () => 0;
+  const masker = createCustomMasker({
+    type: 'regex',
+    pattern: '(?<prefix>api-)(\\w+)',
+    replace_groups: [2],
+    mask_char: 'X'
+  });
+
+  assert.strictEqual(masker('api-token', rng), 'api-XXXXX');
+});

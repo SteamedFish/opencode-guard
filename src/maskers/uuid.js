@@ -12,14 +12,19 @@ const UUID_V4_VARIANT = '89ab'; // Valid variant for UUID v4
 export function maskUUID(uuid, rng) {
   // UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
   // where 4 is the version and y is 8, 9, a, or b
-  
+
+  // Preserve the input's case convention: all-uppercase hex input gets an
+  // all-uppercase masked UUID (mixed/lowercase input stays lowercase)
+  const uppercaseInput = /[A-F]/.test(uuid) && !/[a-f]/.test(uuid);
+
   const part1 = randomString(rng, 8, HEX);
   const part2 = randomString(rng, 4, HEX);
   const part3 = '4' + randomString(rng, 3, HEX); // Version 4
   const part4 = randomString(rng, 1, UUID_V4_VARIANT) + randomString(rng, 3, HEX);
   const part5 = randomString(rng, 12, HEX);
-  
-  return `${part1}-${part2}-${part3}-${part4}-${part5}`;
+
+  const masked = `${part1}-${part2}-${part3}-${part4}-${part5}`;
+  return uppercaseInput ? masked.toUpperCase() : masked;
 }
 
 /**

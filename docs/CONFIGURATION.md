@@ -67,6 +67,8 @@ The plugin searches for config in this order (first found wins):
 
 **Auto-generation on first run**: If no config file is found in any of the locations above, the plugin automatically creates a minimal config at location 4 (`~/.config/opencode/opencode-guard.config.json`) containing a randomly generated `global_salt` (permissions `0600`), and enables itself immediately. You can edit the generated file at any time. If the file cannot be written, the plugin falls back to an in-memory random salt (mappings are lost on restart), prints a warning, and stays enabled.
 
+**Malformed config = fail-closed**: if a config file *exists* but cannot be parsed (invalid JSON), the plugin prints an error and disables itself. It does NOT auto-generate a replacement — auto-generation only happens when no config file exists at all. Fix or delete the malformed file.
+
 ---
 
 ## Full Configuration Options
@@ -128,8 +130,8 @@ The plugin searches for config in this order (first found wins):
 |--------|-------------|---------|
 | `enabled` | Enable/disable the plugin. The plugin is enabled by default; only an explicit `enabled: false` disables it. If no config file exists at all, a minimal one is auto-generated on first run (see [Configuration File Locations](#configuration-file-locations)) | `true` |
 | `debug` | Enable debug logging | `false` |
-| `debug_file` | Append debug output to this file (only used when `debug` is on). Useful under OpenCode v2 where console output is invisible. **Warning:** may contain masked→original mappings and other sensitive values — enable only temporarily and delete the file after debugging | `""` (off) |
-| `global_salt` | **Required.** Secret salt for deterministic masking. Plugin won't work without this | (none — must be set) |
+| `debug_file` | Append debug output to this file (only used when `debug` is on). Useful under OpenCode v2 where console output is invisible. **Warning:** contains plaintext secrets (masked→original mappings). The path must be absolute (relative paths are rejected with a warning); the file is truncated on every startup and created with permissions `0600`; a startup warning is printed whenever file logging activates. Enable only temporarily and delete the file after debugging | `""` (off) |
+| `global_salt` | **Required.** Secret salt for deterministic masking. Plugin won't work without this. Overridden by the `OPENCODE_GUARD_SALT` environment variable (highest priority). The plugin warns if the config file containing the salt is readable by group/others (expected permissions: `0600`) | (none — must be set) |
 | `session_ttl` | Session timeout (e.g., "1h", "30m") | `"1h"` |
 | `max_mappings` | Maximum cached mappings per session | `100000` |
 | `masking.format_preserving` | Enable format-preserving masking | `true` |
@@ -139,9 +141,9 @@ The plugin searches for config in this order (first found wins):
 | `detection.ai_detection` | Enable AI-based detection. **This is the only feature disabled by default** — everything else works out of the box | `false` |
 | `detection.ai_provider` | AI provider: "local", "openai", or "custom" | `"local"` |
 | `detection.ai_timeout_ms` | Timeout for AI detection in milliseconds | `500` |
-| `exclude_llm_endpoints` | LLM endpoints to skip masking | `[]` |
+| `exclude_llm_endpoints` | LLM endpoints to skip masking. Hostname or `host:port` entries (scheme optional). A domain entry matches the exact host and its subdomains (e.g. `api.example.com` covers `v2.api.example.com`), but never unrelated suffixes (e.g. `api.example.com.evil.tld` is NOT excluded). Empty entries are rejected with a warning | `[]` |
 | `exclude_mcp_servers` | MCP servers to treat as "local" | `[]` |
-| `exclude_mcp_tools` | MCP tools to treat as "local" by tool name | Built-in tools |
+| `exclude_mcp_tools` | MCP tools to treat as "local". **Server-scoped:** bare tool names apply only to servers listed in `exclude_mcp_servers` (they never match external servers). Use a qualified entry `server/tool` (or the effective `server_tool` name) to exempt a specific tool on a specific server | Built-in tools |
 
 ---
 
@@ -152,6 +154,7 @@ The plugin searches for config in this order (first found wins):
 | `OPENCODE_GUARD_CONFIG` | Explicit path to config file |
 | `OPENCODE_GUARD_DEBUG` | Enable debug mode (set to `1`) |
 | `OPENCODE_GUARD_DEBUG_FILE` | Debug log file path (overrides `debug_file`; only used when debug is on) |
+| `OPENCODE_GUARD_SALT` | Overrides `global_salt` from the config file (highest priority) |
 
 ---
 

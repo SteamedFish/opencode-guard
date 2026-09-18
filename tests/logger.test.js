@@ -107,3 +107,79 @@ test('logger expands leading ~ to home directory', () => {
   assert.ok(!logger.debugFile.startsWith('~'), 'tilde should be expanded');
   assert.ok(logger.debugFile.endsWith('guard-test.log'));
 });
+
+test('logger rejects relative debug_file paths (file logging disabled)', async () => {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  try {
+    const logger = createLogger({ debug: true, debugFile: 'relative-path.log' });
+    assert.strictEqual(logger.fileEnabled, false, 'relative path must disable file logging');
+    assert.strictEqual(logger.debugFile, '');
+    assert.ok(warnings.some((w) => w.includes('absolute path')), 'should warn about relative path');
+    // Logging must still work (console only) and not throw
+    logger.log('console only');
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test('logger truncates an existing debug file on init', async () => {
+  const file = join(tmpdir(), `opencode-guard-logger-test-${Date.now()}-truncate.log`);
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile(file, 'STALE SECRET FROM PREVIOUS RUN\n');
+
+  const originalWarn = console.warn;
+  console.warn = () => {}; // silence startup warning
+  const logger = createLogger({ debug: true, debugFile: file });
+  console.warn = originalWarn;
+
+  try {
+    logger.log('fresh line');
+
+    const truncated = await waitFor(async () => {
+      if (!existsSync(file)) return false;
+      const content = await readFile(file, 'utf-8');
+      return !content.includes('STALE SECRET');
+    });
+    assert.ok(truncated, 'stale content should be truncated on init');
+
+    const written = await waitFor(async () => {
+      const content = await readFile(file, 'utf-8');
+      return content.includes('fresh line');
+    });
+    assert.ok(written, 'new lines should still be appended after truncation');
+  } finally {
+    await unlink(file).catch(() => {});
+  }
+});
+
+test('logger creates debug file with mode 0600 and warns at startup', async () => {
+  if (process.platform === 'win32') return;
+  const file = join(tmpdir(), `opencode-guard-logger-test-${Date.now()}-mode.log`);
+  const { stat } = await import('node:fs/promises');
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  try {
+    const logger = createLogger({ debug: true, debugFile: file });
+    assert.strictEqual(logger.fileEnabled, true);
+    assert.ok(
+      warnings.some((w) => w.includes(file) && w.includes('PLAINTEXT SECRETS')),
+      'startup warning should state the path and plaintext-secret nature'
+    );
+
+    logger.log('mode check');
+    const created = await waitFor(() => existsSync(file));
+    assert.ok(created, 'log file should be created');
+
+    const st = await stat(file);
+    assert.strictEqual(st.mode & 0o077, 0, 'debug file must not be readable by group/others');
+  } finally {
+    console.warn = originalWarn;
+    await unlink(file).catch(() => {});
+  }
+});

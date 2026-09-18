@@ -38,7 +38,6 @@ export function createCustomMasker(config) {
 
 function createPrefixedTokenMasker(config) {
   const prefix = config.prefix || '';
-  const suffixLength = config.suffix_length;
   const suffixChars = CHAR_SETS[config.suffix_chars] || CHAR_SETS.alphanumeric;
 
   return (value, rng) => {
@@ -81,26 +80,48 @@ function createFixedLengthMasker(config) {
 }
 
 function createRegexMasker(config) {
-  const pattern = new RegExp(config.pattern);
+  // Validate the pattern at init time and fail with a clear config error
+  // (including the offending pattern) instead of an opaque SyntaxError
+  let pattern;
+  try {
+    pattern = new RegExp(config.pattern);
+  } catch (err) {
+    throw new Error(`Invalid regex pattern for custom masker (type: 'regex'): ${JSON.stringify(config.pattern)} — ${err.message}`);
+  }
   const replaceGroups = config.replace_groups || [1];
   const maskChar = config.mask_char || '*';
 
   return (value, rng) => {
-    return value.replace(pattern, (match, ...groups) => {
-      const maskedGroups = groups.slice(0, -2).map((group, index) => {
-        if (replaceGroups.includes(index + 1)) {
-          return maskChar.repeat(group.length);
-        }
-        return group;
-      });
-
-      let result = match;
-      for (let i = replaceGroups.length - 1; i >= 0; i--) {
-        const groupIndex = replaceGroups[i] - 1;
-        if (groups[groupIndex] !== undefined) {
-          result = result.replace(groups[groupIndex], maskedGroups[groupIndex]);
-        }
+    return value.replace(pattern, (match, ...rest) => {
+      // With named capture groups the callback gets an extra trailing
+      // `groups` object: (match, ...captures, offset, string, groups?).
+      // Pop it off so capture-group indexing below stays correct.
+      if (rest.length > 0 && typeof rest[rest.length - 1] === 'object' && rest[rest.length - 1] !== null) {
+        rest.pop();
       }
+      // rest is now [capture1..captureN, offset, string]
+      const captures = rest.slice(0, -2);
+
+      // Rebuild the match left-to-right, masking the configured groups by
+      // their position inside the match. The cursor advances past EVERY
+      // located group (masked or not) so that when several groups share
+      // identical text, each is found at its own position.
+      let result = '';
+      let cursor = 0;
+      for (let i = 0; i < captures.length; i++) {
+        const group = captures[i];
+        // Unmatched optional groups are undefined - nothing to locate
+        if (group === undefined || group === '') continue;
+        const idx = match.indexOf(group, cursor);
+        if (idx === -1) continue; // defensive: cannot locate group text
+        if (replaceGroups.includes(i + 1)) {
+          result += match.slice(cursor, idx) + maskChar.repeat(group.length);
+        } else {
+          result += match.slice(cursor, idx + group.length);
+        }
+        cursor = idx + group.length;
+      }
+      result += match.slice(cursor);
       return result;
     });
   };

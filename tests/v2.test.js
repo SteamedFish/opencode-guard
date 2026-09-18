@@ -336,3 +336,175 @@ test('v2 default export exposes id, setup and server', async () => {
   assert.strictEqual(typeof mod.default.setup, 'function');
   assert.strictEqual(typeof mod.default.server, 'function');
 });
+
+test('v2 setupV2 does not throw when experimental ws hooks are unavailable (debug on)', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, { ...BASE_CONFIG, debug: true });
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    const ctx = {
+      location: { directory: tempDir },
+      provider: { get: async () => ({ data: { settings: {} } }) },
+      mcp: { list: async () => ({ data: [] }) },
+      session: {
+        hook: async (name) => {
+          if (name.startsWith('experimental.ws.')) throw new Error('unknown hook');
+        },
+      },
+      tool: { hook: async () => {} },
+    };
+    await setupV2(ctx); // must not throw (H6)
+    assert.ok(
+      warnings.some((w) => w.includes('ws hooks unavailable')),
+      'should warn via core.logger instead of crashing'
+    );
+  } finally {
+    console.warn = originalWarn;
+    await cleanup(tempDir);
+  }
+});
+
+test('v2 maskRequest masks with ephemeral session when sessionID is missing', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, BASE_CONFIG);
+  try {
+    const core = await createGuardCore(tempDir);
+    const handlers = createV2Handlers(core, {
+      providerGet: async () => ({ data: { settings: { baseURL: 'https://api.example.com/v1' } } }),
+      mcpList: async () => ({ data: [] }),
+    });
+
+    const event = {
+      model: { providerID: 'openai', id: 'gpt-4' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'email ccbi@example.com please' }] }],
+    };
+    await handlers.maskRequest(event);
+
+    assert.ok(
+      !event.messages[0].content[0].text.includes('ccbi@example.com'),
+      'request without sessionID must still be masked (fail closed)'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('v2 toolBefore does NOT exclude bare default tool names on external servers', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, BASE_CONFIG); // default exclude_mcp_tools includes bare run_job
+  try {
+    const { ctx, hooks } = makeCtx(tempDir, { mcpList: async () => ({ data: [{ name: 'external' }] }) });
+    await setupV2(ctx);
+
+    // Establish mapping in the plugin session
+    await hooks.session.context({
+      sessionID: 'sess-1',
+      model: { providerID: 'openai', id: 'gpt-4' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ccbi@example.com' }] }],
+    });
+    const masked = await maskedFor(tempDir, BASE_CONFIG, 'sess-1', 'ccbi@example.com');
+
+    const event = { tool: 'external_run_job', sessionID: 'sess-1', input: { arg: masked } };
+    await hooks.tool['execute.before'](event);
+
+    assert.ok(
+      !String(event.input.arg).includes('ccbi@example.com'),
+      'external server must not get originals via bare default tool name (H9)'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('v2 toolBefore restores for excluded server tool and qualified entries', async () => {
+  const tempDir = await createTempDir();
+  const config = {
+    ...BASE_CONFIG,
+    exclude_mcp_servers: ['trusted'],
+    exclude_mcp_tools: ['external/run_job'],
+  };
+  await createTempConfig(tempDir, config);
+  try {
+    const { ctx, hooks } = makeCtx(tempDir, { mcpList: async () => ({ data: [{ name: 'external' }] }) });
+    await setupV2(ctx);
+
+    await hooks.session.context({
+      sessionID: 'sess-1',
+      model: { providerID: 'openai', id: 'gpt-4' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ccbi@example.com' }] }],
+    });
+    const masked = await maskedFor(tempDir, config, 'sess-1', 'ccbi@example.com');
+
+    // Excluded server: bare run_job restores
+    const ev1 = { tool: 'trusted_run_job', sessionID: 'sess-1', input: { arg: masked } };
+    await hooks.tool['execute.before'](ev1);
+    assert.strictEqual(ev1.input.arg, 'ccbi@example.com', 'excluded server tool should be restored');
+
+    // Qualified "server/tool" entry restores on that server
+    const ev2 = { tool: 'external_run_job', sessionID: 'sess-1', input: { arg: masked } };
+    await hooks.tool['execute.before'](ev2);
+    assert.strictEqual(ev2.input.arg, 'ccbi@example.com', 'qualified server/tool entry should restore');
+
+    // Same tool name on a different server is NOT excluded
+    const ev3 = { tool: 'other_run_job', sessionID: 'sess-1', input: { arg: masked } };
+    await hooks.tool['execute.before'](ev3);
+    // 'other' is not a connected MCP server and not excluded -> treated as built-in -> restored
+    // so use a connected external server instead for the negative case
+    const { ctx: ctx2, hooks: hooks2 } = makeCtx(tempDir, { mcpList: async () => ({ data: [{ name: 'other' }] }) });
+    await setupV2(ctx2);
+    await hooks2.session.context({
+      sessionID: 'sess-1',
+      model: { providerID: 'openai', id: 'gpt-4' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ccbi@example.com' }] }],
+    });
+    await hooks2.tool['execute.before'](ev3);
+    assert.ok(
+      !String(ev3.input.arg).includes('ccbi@example.com'),
+      'qualified entry must not leak to other servers'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});
+
+test('v2 resolveBaseUrl does not cache failures', async () => {
+  const tempDir = await createTempDir();
+  await createTempConfig(tempDir, { ...BASE_CONFIG, exclude_llm_endpoints: ['api.example.com'] });
+  try {
+    let calls = 0;
+    const core = await createGuardCore(tempDir);
+    const handlers = createV2Handlers(core, {
+      providerGet: async () => {
+        calls++;
+        if (calls === 1) throw new Error('transient');
+        return { data: { settings: { baseURL: 'https://api.example.com/v1' } } };
+      },
+      mcpList: async () => ({ data: [] }),
+    });
+
+    const mkEvent = () => ({
+      sessionID: 'sess-1',
+      model: { providerID: 'openai', id: 'gpt-4' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ccbi@example.com' }] }],
+    });
+
+    const ev1 = mkEvent();
+    await handlers.maskRequest(ev1);
+    assert.ok(
+      !ev1.messages[0].content[0].text.includes('ccbi@example.com'),
+      'failed baseURL lookup must not disable masking'
+    );
+
+    const ev2 = mkEvent();
+    await handlers.maskRequest(ev2);
+    assert.strictEqual(calls, 2, 'failure must not be cached; provider queried again');
+    assert.ok(
+      ev2.messages[0].content[0].text.includes('ccbi@example.com'),
+      'excluded endpoint applies once baseURL resolves'
+    );
+  } finally {
+    await cleanup(tempDir);
+  }
+});

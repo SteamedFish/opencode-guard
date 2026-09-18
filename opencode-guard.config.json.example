@@ -1,4 +1,11 @@
 {
+  "_notes": {
+    "global_salt": "Overridden by the OPENCODE_GUARD_SALT environment variable (highest priority). Keep this file chmod 600; the plugin warns if it is group/world-readable.",
+    "debug_file": "Absolute path only - relative paths are rejected with a warning. The file is truncated on every startup, created with mode 0600, and contains PLAINTEXT SECRETS (masked-to-original mappings). Enable only temporarily and delete after debugging.",
+    "exclude_llm_endpoints": "Hostname or host:port entries (scheme optional). A domain entry also matches its subdomains, but not unrelated suffixes. Empty entries are rejected.",
+    "exclude_mcp_servers": "All tools on these servers receive original (unmasked) values.",
+    "exclude_mcp_tools": "Bare tool names apply ONLY to servers listed in exclude_mcp_servers. To exempt one tool on one server, use a qualified entry: \"server/tool\" (or the effective \"server_tool\" name)."
+  },
   "enabled": true,
   "debug": false,
   "debug_file": "",
@@ -139,7 +146,7 @@
       }
     ],
     "builtin": ["email", "phone", "uuid", "ipv4"],
-    "exclude": ["example.com", "localhost", "127.0.0.1", "0.0.0.0", "clio-agent@sisyphuslabs.ai", "noreply@github.com", "actions@github.com"]
+    "exclude": ["example.com", "localhost"]
   },
   "custom_maskers": {
     "my_custom_token": {

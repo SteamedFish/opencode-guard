@@ -258,3 +258,139 @@ test('loadConfig falls back to ephemeral salt when config write fails', async ()
   }
 });
 
+
+test('loadConfig fails closed (disabled) on malformed existing config, without auto-generating', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalHome = process.env.HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), 'opencode-guard-home-'));
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}-malformed.json`);
+  await writeFile(tempConfig, '{ this is not valid json ');
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
+  process.env.HOME = fakeHome;
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.enabled, false, 'malformed config must disable the plugin (fail closed)');
+    assert.strictEqual(config.parseError, true);
+    assert.strictEqual(config.globalSalt, '', 'no salt should be invented for a malformed config');
+    assert.strictEqual(config.loadedFrom, tempConfig);
+    assert.strictEqual(config.generated, undefined, 'must NOT auto-generate over a parse failure');
+    assert.ok(warnings.some((w) => w.includes(tempConfig) && w.includes('DISABLED')), 'loud warning expected');
+
+    // And no config was generated in the fake home either
+    const { existsSync } = await import('node:fs');
+    assert.strictEqual(
+      existsSync(join(fakeHome, '.config', 'opencode', 'opencode-guard.config.json')),
+      false,
+      'auto-generation must not run when an existing config is malformed'
+    );
+  } finally {
+    console.warn = originalWarn;
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    if (originalHome !== undefined) {
+      process.env.HOME = originalHome;
+    } else {
+      delete process.env.HOME;
+    }
+    await unlink(tempConfig).catch(() => {});
+    await rm(fakeHome, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('loadConfig fails closed on malformed project config (not just env path)', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalHome = process.env.HOME;
+  const fakeHome = await mkdtemp(join(tmpdir(), 'opencode-guard-home-'));
+  const fakeProject = await mkdtemp(join(tmpdir(), 'opencode-guard-project-'));
+  delete process.env.OPENCODE_GUARD_CONFIG;
+  process.env.HOME = fakeHome;
+  await writeFile(join(fakeProject, 'opencode-guard.config.json'), '{"enabled": true,,,}');
+
+  const originalWarn = console.warn;
+  console.warn = () => {};
+
+  try {
+    const config = await loadConfig(fakeProject);
+    assert.strictEqual(config.enabled, false);
+    assert.strictEqual(config.parseError, true);
+  } finally {
+    console.warn = originalWarn;
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    }
+    if (originalHome !== undefined) {
+      process.env.HOME = originalHome;
+    } else {
+      delete process.env.HOME;
+    }
+    await rm(fakeHome, { recursive: true, force: true }).catch(() => {});
+    await rm(fakeProject, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('loadConfig: OPENCODE_GUARD_SALT overrides global_salt from config file', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalSalt = process.env.OPENCODE_GUARD_SALT;
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}-salt.json`);
+  await writeFile(tempConfig, JSON.stringify({ enabled: true, global_salt: 'file-salt' }));
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
+  process.env.OPENCODE_GUARD_SALT = 'env-salt-override';
+
+  const originalWarn = console.warn;
+  console.warn = () => {}; // silence permission warning for tmp file
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.globalSalt, 'env-salt-override');
+  } finally {
+    console.warn = originalWarn;
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    if (originalSalt !== undefined) {
+      process.env.OPENCODE_GUARD_SALT = originalSalt;
+    } else {
+      delete process.env.OPENCODE_GUARD_SALT;
+    }
+    await unlink(tempConfig).catch(() => {});
+  }
+});
+
+test('loadConfig rejects empty/whitespace entries in exclude_llm_endpoints', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}-exclude.json`);
+  await writeFile(tempConfig, JSON.stringify({
+    enabled: true,
+    global_salt: 'test-salt',
+    exclude_llm_endpoints: ['', '   ', 'localhost', 'api.example.com'],
+  }));
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.deepStrictEqual(config.excludeLlmEndpoints, ['localhost', 'api.example.com']);
+    assert.ok(warnings.some((w) => w.includes('empty/whitespace entry')), 'should warn about rejected entries');
+  } finally {
+    console.warn = originalWarn;
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    await unlink(tempConfig).catch(() => {});
+  }
+});

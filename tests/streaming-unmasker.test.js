@@ -237,3 +237,132 @@ test('StreamingUnmasker handles token at very end of chunk', () => {
 
   assert.strictEqual(unmasker.flush(), '');
 });
+
+test('StreamingUnmasker restores masked UUID split across chunks', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  const masked = '9f8e7d6c-1111-2222-3333-444455556666';
+  const original = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  session.maskedToOriginal.set(masked, original);
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('ID: 9f8e7d6c-1111-22');
+  assert.strictEqual(chunk1, 'ID: ');
+
+  const chunk2 = unmasker.transform('22-3333-444455556666 done');
+  assert.strictEqual(chunk2, `${original} done`);
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker restores masked MAC address split across chunks', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  const masked = 'f0:de:bc:9a:78:56';
+  const original = '00:1a:2b:3c:4d:5e';
+  session.maskedToOriginal.set(masked, original);
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('MAC f0:de:bc');
+  assert.strictEqual(chunk1, 'MAC ');
+
+  const chunk2 = unmasker.transform(':9a:78:56 up');
+  assert.strictEqual(chunk2, `${original} up`);
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker restores masked password (no prefix) split across chunks', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  const masked = 'Xk9mQ2vBn8Tz';
+  const original = 'hunter2';
+  session.maskedToOriginal.set(masked, original);
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('pw=Xk9mQ2');
+  assert.strictEqual(chunk1, 'pw=');
+
+  const chunk2 = unmasker.transform('vBn8Tz;');
+  assert.strictEqual(chunk2, `${original};`);
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker restores generic credential without known shape', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.maskedToOriginal.set('Zz9-yy8_xx7', 'plainuser');
+
+  const unmasker = new StreamingUnmasker(session);
+  const result = unmasker.transform('login: Zz9-yy8_xx7;');
+
+  assert.strictEqual(result, 'login: plainuser;');
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker does not hold innocent trailing text', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.maskedToOriginal.set('ghp_abc123def4567890', 'mysecrettoken');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  // No key prefix matches any suffix: emit immediately, hold nothing.
+  assert.strictEqual(unmasker.transform('The answer is 42'), 'The answer is 42');
+  assert.strictEqual(unmasker.transform(' and a decade later'), ' and a decade later');
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker holds split token immediately behind a restored one (L1)', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.maskedToOriginal.set('ghp_aaaaaaaaaaaa', 'FIRST');
+  session.maskedToOriginal.set('ghp_bbbbbbbbbbbb', 'SECOND');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  // The partial second token trails the restored first one in the same chunk:
+  // it must be held (not flushed unrestored) until it completes.
+  const chunk1 = unmasker.transform('ghp_aaaaaaaaaaaa ghp_bbbb');
+  assert.strictEqual(chunk1, 'FIRST ');
+
+  const chunk2 = unmasker.transform('bbbbbbbb end');
+  assert.strictEqual(chunk2, 'SECOND end');
+
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker flush emits legitimately held remainder', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.maskedToOriginal.set('ghp_abc123def4567890', 'mysecrettoken');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const chunk1 = unmasker.transform('partial ghp_abc');
+  assert.strictEqual(chunk1, 'partial ');
+
+  // The held suffix never completed into a key: flush emits it verbatim.
+  assert.strictEqual(unmasker.flush(), 'ghp_abc');
+});
+
+test('StreamingUnmasker prefers longest key when one key is a prefix of another', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+  session.maskedToOriginal.set('sk-abc', 'SHORT');
+  session.maskedToOriginal.set('sk-abcdef', 'LONG');
+
+  const unmasker = new StreamingUnmasker(session);
+
+  const result = unmasker.transform('sk-abcdef and sk-abc end');
+  assert.strictEqual(result, 'LONG and SHORT end');
+  assert.strictEqual(unmasker.flush(), '');
+});
+
+test('StreamingUnmasker picks up mappings added after construction', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
+
+  const unmasker = new StreamingUnmasker(session);
+  assert.strictEqual(unmasker.transform('nothing yet'), 'nothing yet');
+
+  session.maskedToOriginal.set('ghp_newtoken123', 'late-secret');
+  const result = unmasker.transform('now ghp_newtoken123!');
+  assert.strictEqual(result, 'now late-secret!');
+  assert.strictEqual(unmasker.flush(), '');
+});

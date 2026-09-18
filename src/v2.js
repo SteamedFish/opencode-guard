@@ -5,6 +5,7 @@ import { StreamingUnmasker } from './streaming-unmasker.js';
 import { wrapResponse, createJsonSafeSessionView, JSON_STREAM_MASKED_PATTERN } from './response-unmasker.js';
 
 const MCP_SERVER_CACHE_TTL_MS = 5000;
+const BASE_URL_CACHE_TTL_MS = 5000;
 
 const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
 
@@ -36,7 +37,7 @@ export async function setupV2(ctx) {
     await ctx.session.hook('experimental.ws.receive', handlers.wsReceive);
   } catch (err) {
     if (core.debug) {
-      logger.warn(`[opencode-guard] experimental ws hooks unavailable: ${err.message}`);
+      core.logger.warn(`[opencode-guard] experimental ws hooks unavailable: ${err.message}`);
     }
   }
 }
@@ -51,14 +52,17 @@ export async function setupV2(ctx) {
  * @param {() => Promise<any>} env.mcpList
  */
 export function createV2Handlers(core, env) {
-  const { config, debug, logger, patterns, aiDetector, getSession, isExcludedEndpoint, isExcludedMcpServer, isExcludedMcpTool } = core;
+  const { config, debug, logger, patterns, aiDetector, getSession, createEphemeralSession, isExcludedEndpoint, isExcludedMcpServer, isExcludedMcpTool } = core;
 
-  // Cached baseURL per providerID (undefined = unknown / error)
+  // Cached baseURL per providerID, refreshed at most every 5s.
+  // Failed lookups (undefined) are NOT cached so a transient provider error
+  // does not disable endpoint exclusion checks for long.
   const baseUrlCache = new Map();
 
   const resolveBaseUrl = async (providerID) => {
     if (!providerID) return undefined;
-    if (baseUrlCache.has(providerID)) return baseUrlCache.get(providerID);
+    const cached = baseUrlCache.get(providerID);
+    if (cached && Date.now() - cached.at < BASE_URL_CACHE_TTL_MS) return cached.baseURL;
     let baseURL;
     try {
       const res = await env.providerGet(providerID);
@@ -66,7 +70,11 @@ export function createV2Handlers(core, env) {
     } catch {
       baseURL = undefined;
     }
-    baseUrlCache.set(providerID, baseURL);
+    if (baseURL === undefined) {
+      baseUrlCache.delete(providerID);
+      return undefined;
+    }
+    baseUrlCache.set(providerID, { at: Date.now(), baseURL });
     return baseURL;
   };
 
@@ -108,16 +116,19 @@ export function createV2Handlers(core, env) {
 
   /** Mask outgoing request content (context/compaction/generate/title hooks). */
   const maskRequest = async (event) => {
-    const session = getSession(event.sessionID);
-    if (!session) {
-      if (debug) logger.log(`[opencode-guard] v2 maskRequest: no session for ${event.sessionID}`);
-      return;
-    }
-
     const baseURL = await resolveBaseUrl(event.model?.providerID);
     if (isExcludedEndpoint(baseURL)) {
       if (debug) logger.log(`[opencode-guard] v2 maskRequest: skipping excluded endpoint: ${baseURL}`);
       return;
+    }
+
+    let session = getSession(event.sessionID);
+    if (!session) {
+      // Fail-closed: no sessionID means no persistent session, but the
+      // request must still be masked. Use a per-request ephemeral session
+      // (discarded afterwards; masked values cannot be restored).
+      if (debug) logger.log(`[opencode-guard] v2 maskRequest: no sessionID (${event.sessionID}); masking with ephemeral session (no restore possible)`);
+      session = createEphemeralSession();
     }
 
     let changedCount = 0;
@@ -190,7 +201,7 @@ export function createV2Handlers(core, env) {
 
     const short = event.tool.slice(sanitize(server).length + 1);
 
-    if (isExcludedMcpServer(server) || isExcludedMcpTool(short) || isExcludedMcpTool(event.tool)) {
+    if (isExcludedMcpServer(server) || isExcludedMcpTool(server, short, event.tool)) {
       // Local/trusted MCP - restore originals for local execution
       const reason = isExcludedMcpServer(server) ? `server ${server}` : `tool ${short}`;
       if (debug) logger.log(`[opencode-guard] v2 toolBefore: restoring args for local ${reason}`, JSON.stringify(event.input));
@@ -237,16 +248,13 @@ export function createV2Handlers(core, env) {
     }
   };
 
-  // Per-session WebSocket unmaskers (reset on each model call via handshake)
-  const wsUnmaskers = new Map();
-
-  const wsHandshake = async (event) => {
-    const key = String(event.sessionID ?? '');
-    if (key) wsUnmaskers.delete(key);
+  const wsHandshake = async (_event) => {
+    // No-op: ws receive creates a fresh unmasker per frame, so there is no
+    // per-session WS state to reset on a new model call. The hook remains
+    // registered for forward compatibility.
   };
 
   const wsReceive = async (event) => {
-    const key = String(event.sessionID ?? '');
     const session = getSession(event.sessionID);
     if (!session || typeof event.frame !== 'string' || !event.frame) return;
 
@@ -258,7 +266,6 @@ export function createV2Handlers(core, env) {
       maskedPattern: JSON_STREAM_MASKED_PATTERN,
     });
     event.frame = unmasker.transform(event.frame) + unmasker.flush();
-    wsUnmaskers.delete(key);
   };
 
   return {

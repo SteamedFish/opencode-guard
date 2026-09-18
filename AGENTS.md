@@ -164,3 +164,9 @@ On first run, if no config exists in any location, a minimal config `{ "global_s
 - No config file = auto-generated random salt (plugin enabled); existing config missing salt = plugin disabled (fail-safe)
 - HMAC-SHA256 for seed generation (irreversible without salt)
 - In-memory only - no persistence of sensitive mappings
+
+## GIT WORKFLOW (agreed 2026-09-18)
+- Worktree + topic branch for non-trivial work (`.slim/worktrees/<slug>`, branch `omos/<slug>`); direct edits on `main` acceptable for trivial one-liners
+- GPG-signed atomic commits, committed per logical lane; commit only your own changes
+- After verification (full `npm test` green), merge to `main` and push automatically - no need to ask
+- Commit scope includes project meta (AGENTS.md, plan/, CHANGELOG, docs)

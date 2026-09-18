@@ -12,7 +12,9 @@ const ALPHANUMERIC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345
  */
 export function maskDatabaseConn(connString, rng) {
   // Pattern: protocol://username:password@host:port/database?params
-  const match = connString.match(/^([a-z+]+:\/\/)([^:]+):([^@]*)@(.+)$/);
+  // Case-insensitive: isDatabaseConn() and the detector both use the `i` flag,
+  // so mixed-case schemes (e.g. PostgreSQL://) must parse here too.
+  const match = connString.match(/^([a-z+]+:\/\/)([^:]+):([^@]*)@(.+)$/i);
   if (!match) return connString;
 
   const [, protocol, username, password, rest] = match;
