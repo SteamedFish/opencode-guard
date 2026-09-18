@@ -66,6 +66,7 @@ export async function createGuardCore(directory) {
       timeoutMs: config.detection.aiTimeoutMs,
       autoInstallDeps: config.detection.autoInstallDeps,
       localModel: config.detection.localModel,
+      logger,
     });
 
     if (debug) {
@@ -79,8 +80,18 @@ export async function createGuardCore(directory) {
     try {
       await aiDetector.initialize();
       aiDetectionReady = true;
-      if (debug) {
-        logger.log(`[opencode-guard] AI detector initialized successfully`);
+      if (aiDetector.isReady()) {
+        if (debug) {
+          logger.log(`[opencode-guard] AI detector initialized successfully`);
+        }
+      } else {
+        // AI detection was explicitly enabled but is inert. Log via logger
+        // (debug-gated) because plain console.warn is invisible under v2;
+        // the init failure reason above also only reaches console.
+        logger.warn(`[opencode-guard] AI detection enabled but provider unavailable: ${aiDetector.initError || 'unknown reason'}`);
+        if (!config.detection.autoInstallDeps) {
+          logger.warn(`[opencode-guard] Tip: Set auto_install_deps: true to automatically install missing dependencies`);
+        }
       }
     } catch (err) {
       if (debug) {

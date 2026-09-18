@@ -5,26 +5,28 @@ export class AIDetector {
   constructor(config = {}) {
     this.config = {
       provider: config.provider || 'local',
-      timeoutMs: config.timeoutMs || 500,
+      timeoutMs: config.timeoutMs || 2000,
       autoInstallDeps: config.autoInstallDeps || false,
       localModel: config.localModel || '',
       ...config,
     };
     this.provider = null;
     this.initialized = false;
+    this.initError = null;
   }
 
   async initialize() {
     if (this.initialized) return;
-    
+
     try {
       this.provider = createAIProvider(this.config.provider, this.config);
-      
+
       // For local provider, eagerly initialize to trigger auto-install if needed
       if (this.config.provider === 'local') {
         try {
           await this.provider.initialize();
         } catch (err) {
+          this.initError = err.message;
           console.warn(`[opencode-guard] AI provider not available: ${err.message}`);
           this.provider = null;
         }
@@ -32,16 +34,23 @@ export class AIDetector {
         // For other providers, just check availability
         const available = await this.provider.isAvailable();
         if (!available) {
+          this.initError = `provider "${this.config.provider}" is not available`;
           this.provider = null;
         }
       }
-      
+
       this.initialized = true;
     } catch (err) {
+      this.initError = err.message;
       console.warn(`[opencode-guard] Failed to initialize AI provider: ${err.message}`);
       this.provider = null;
       this.initialized = true;
     }
+  }
+
+  /** True when a usable provider is ready (false after any init failure). */
+  isReady() {
+    return this.initialized && this.provider !== null;
   }
 
   async detect(text) {
