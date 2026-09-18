@@ -90,15 +90,17 @@ ln -s ~/opencode-guard/src ~/.config/opencode/plugins/opencode-guard
 
 如需项目级安装，改用项目内的 `.opencode/plugins/opencode-guard/`。在 OpenCode v1 上，唯一方式是上面 `opencode.json` 中的 `plugins` 数组。
 
-### 2. 配置
+### 2. 配置（可选）
 
-生成安全盐值：
+插件**开箱即用**。首次运行时，如果在任何[支持的位置](docs/CONFIGURATION.zh-CN.md#配置文件位置)都找不到配置文件，OpenCode Guard 会自动在 `~/.config/opencode/opencode-guard.config.json` 生成最小配置文件（权限 `0600`），内含随机生成的 `global_salt`。插件随即直接启用——无需手动配置。生成的文件可随时编辑。
+
+如需使用自己的盐值或项目特定设置，生成安全盐值：
 
 ```bash
 openssl rand -base64 32
 ```
 
-在 `~/.config/opencode/opencode-guard.config.json` 创建配置文件：
+并创建配置文件（例如 `~/.config/opencode/opencode-guard.config.json`）：
 
 ```json
 {
@@ -107,7 +109,7 @@ openssl rand -base64 32
 }
 ```
 
-> ⚠️ **没有配置文件时插件默认禁用。** 详见[配置指南](docs/CONFIGURATION.zh-CN.md)了解所有选项。
+> 插件**默认启用**——只有需要自定义设置或使用自己的盐值时才必须手动创建配置文件。如需禁用插件，在配置中显式设置 `"enabled": false`。详见[配置指南](docs/CONFIGURATION.zh-CN.md)了解所有选项。
 
 ### 3. 完成
 
@@ -217,9 +219,9 @@ opencode
 > ⚠️ 调试文件可能包含脱敏值→原始值的映射及其他敏感内容 — 请仅在临时调试时开启，调试结束后删除该文件。
 
 常见原因：
-- 找不到配置文件
-- 未设置 `global_salt`
-- `enabled: false`
+- 配置中显式设置了 `enabled: false`（插件默认启用）
+- 配置文件存在但缺少 `global_salt`（fail-safe：插件自行禁用）
+- 自动生成配置文件失败（插件回退为内存随机盐并打印警告——脱敏仍生效，但重启后映射失效）
 
 详见[故障排查指南](docs/TROUBLESHOOTING.zh-CN.md)了解详细解决方案。
 

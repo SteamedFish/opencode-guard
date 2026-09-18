@@ -20,16 +20,17 @@ Sensitive data (emails, API keys) are being sent to LLM providers without maskin
 
 ### Common Causes
 
-1. **No config file found**
-   - The plugin requires a config file to work
-   - Solution: Create `opencode-guard.config.json` (see [Configuration Guide](CONFIGURATION.md))
+1. **`enabled: false` in your config**
+   - The plugin is enabled by default; an explicit `enabled: false` disables it
+   - Solution: Remove the option or set `"enabled": true`
 
-2. **`global_salt` missing**
-   - The plugin won't work without `global_salt` set
+2. **`global_salt` missing from an existing config**
+   - An existing config file without `global_salt` disables the plugin (fail-safe). Note: this only applies when a config file exists — if no config exists at all, a minimal one is auto-generated on first run
    - Solution: Add `"global_salt": "your-salt-here"` to your config
 
-3. **`enabled: false`**
-   - Make sure `enabled` is set to `true` in your config
+3. **Auto-generated config could not be written**
+   - On first run the plugin tries to create `~/.config/opencode/opencode-guard.config.json`; if that fails it falls back to an in-memory random salt and prints a warning. Masking still works, but mappings are lost on restart
+   - Solution: Check permissions on `~/.config/opencode/` and the warning message in the logs
 
 ### Debug Steps
 
@@ -40,7 +41,8 @@ opencode
 ```
 
 Look for messages like:
-- `[opencode-guard] config: not found (plugin disabled)` — Config file missing
+- A `config: not found` message on first run is **normal** — the plugin automatically generates a minimal config at `~/.config/opencode/opencode-guard.config.json` and stays enabled
+- A warning about failing to write the config file — the plugin fell back to an in-memory salt (mappings lost on restart) but is still masking
 - `[opencode-guard] config: /path/to/config, enabled=false` — Plugin disabled in config
 - `[opencode-guard] masked N sensitive values` — Working correctly
 
@@ -55,9 +57,8 @@ ls -la ./.opencode/opencode-guard.config.json
 
 ### Quick Checklist
 
-- [ ] Config file exists in one of the [expected locations](CONFIGURATION.md#configuration-file-locations)
-- [ ] `enabled: true` is set in config
-- [ ] `global_salt` is set and is a non-empty string
+- [ ] Plugin is not explicitly disabled (`enabled: false`) in your config — it is enabled by default
+- [ ] If your config file exists, `global_salt` is set and is a non-empty string (missing salt in an existing config disables the plugin; with no config at all, one is auto-generated)
 - [ ] Salt is at least 32 characters for security
 - [ ] Config is valid JSON (no syntax errors)
 
@@ -239,7 +240,7 @@ opencode
 
 | Message | Meaning |
 |---------|---------|
-| `config: not found (plugin disabled)` | No config file found in any location |
+| `config: not found` (first run) | No config file found in any location — a minimal config with a random salt is auto-generated at `~/.config/opencode/opencode-guard.config.json`; the plugin stays enabled |
 | `config: /path/to/config, enabled=false` | Config found but plugin disabled |
 | `config: /path/to/config, enabled=true` | Config loaded successfully |
 | `masked N sensitive values` | Successfully masked N values |

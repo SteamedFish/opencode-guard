@@ -20,16 +20,17 @@ OpenCode Guard 的常见问题和解决方案。
 
 ### 常见原因
 
-1. **找不到配置文件**
-   - 插件需要配置文件才能工作
-   - 解决方案：创建 `opencode-guard.config.json`（参见[配置指南](CONFIGURATION.zh-CN.md)）
+1. **配置中设置了 `enabled: false`**
+   - 插件默认启用；显式设置 `enabled: false` 才会禁用
+   - 解决方案：删除该选项或设置 `"enabled": true`
 
-2. **缺少 `global_salt`**
-   - 没有设置 `global_salt` 插件将无法工作
+2. **已有配置中缺少 `global_salt`**
+   - 已存在的配置文件缺少 `global_salt` 会禁用插件（fail-safe）。注意：仅当配置文件存在时如此——如果完全没有配置文件，首次运行时会自动生成最小配置
    - 解决方案：在配置中添加 `"global_salt": "your-salt-here"`
 
-3. **`enabled: false`**
-   - 确保配置中的 `enabled` 设置为 `true`
+3. **自动生成配置文件失败**
+   - 首次运行时插件会尝试创建 `~/.config/opencode/opencode-guard.config.json`；如果失败，则回退为内存随机盐并打印警告。脱敏仍生效，但重启后映射失效
+   - 解决方案：检查 `~/.config/opencode/` 的权限及日志中的警告信息
 
 ### 调试步骤
 
@@ -40,7 +41,8 @@ opencode
 ```
 
 留意以下消息：
-- `[opencode-guard] config: not found (plugin disabled)` — 缺少配置文件
+- 首次运行出现 `config: not found` 消息是**正常现象**——插件会自动在 `~/.config/opencode/opencode-guard.config.json` 生成最小配置，并保持启用状态
+- 关于写入配置文件失败的警告——插件已回退为内存随机盐（重启后映射失效），但脱敏仍在进行
 - `[opencode-guard] config: /path/to/config, enabled=false` — 配置中禁用了插件
 - `[opencode-guard] masked N sensitive values` — 正常工作
 
@@ -55,9 +57,8 @@ ls -la ./.opencode/opencode-guard.config.json
 
 ### 快速检查清单
 
-- [ ] 配置文件存在于[预期位置](CONFIGURATION.zh-CN.md#配置文件位置)之一
-- [ ] 配置中设置了 `enabled: true`
-- [ ] 设置了 `global_salt` 且为非空字符串
+- [ ] 配置中没有显式禁用插件（`enabled: false`）——插件默认启用
+- [ ] 如果配置文件存在，`global_salt` 已设置且为非空字符串（已有配置缺少盐值会禁用插件；完全没有配置时会自动生成）
 - [ ] 盐值至少 32 个字符以确保安全
 - [ ] 配置是有效的 JSON（无语法错误）
 
@@ -239,7 +240,7 @@ opencode
 
 | 消息 | 含义 |
 |-----|------|
-| `config: not found (plugin disabled)` | 在任何位置都找不到配置文件 |
+| `config: not found`（首次运行） | 在任何位置都找不到配置文件——会在 `~/.config/opencode/opencode-guard.config.json` 自动生成包含随机盐值的最小配置；插件保持启用 |
 | `config: /path/to/config, enabled=false` | 找到配置但插件被禁用 |
 | `config: /path/to/config, enabled=true` | 配置加载成功 |
 | `masked N sensitive values` | 成功脱敏 N 个值 |

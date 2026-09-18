@@ -67,7 +67,7 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 ### Error Handling
 - Silent failures in config loading (catch + console.warn)
 - Invalid regex patterns are skipped (try/catch in pattern compilation)
-- Missing config = plugin disabled (not error)
+- Missing config = auto-generate minimal config with random salt (plugin enabled); generation failure = in-memory salt fallback + warning
 
 ### Testing
 - Node.js built-in test runner: `node --test`
@@ -157,8 +157,10 @@ The plugin has a dual-compat entry point (`export default { id, setup, server }`
 3. `./.opencode/opencode-guard.config.json`
 4. `~/.config/opencode/opencode-guard.config.json`
 
+On first run, if no config exists in any location, a minimal config `{ "global_salt": "<64 random hex>" }` (permissions 0600) is auto-generated at location 4 and the plugin is enabled out-of-the-box. If writing fails, fall back to an in-memory random salt (mappings lost on restart) with a warning; plugin stays enabled. Only an explicit `"enabled": false` disables the plugin.
+
 ### Security Model
 - `global_salt` required - shared secret for deterministic masking
-- No salt = plugin disabled (fail-safe)
+- No config file = auto-generated random salt (plugin enabled); existing config missing salt = plugin disabled (fail-safe)
 - HMAC-SHA256 for seed generation (irreversible without salt)
 - In-memory only - no persistence of sensitive mappings

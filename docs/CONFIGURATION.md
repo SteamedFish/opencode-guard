@@ -15,7 +15,7 @@ Complete guide for configuring OpenCode Guard.
 
 ## Quick Setup
 
-**You MUST create a `opencode-guard.config.json` file** in one of these locations:
+**No config file is required to get started** — on the first run, the plugin automatically generates one (see [Configuration File Locations](#configuration-file-locations)). The steps below are only needed if you want to customize settings or use your own salt.
 
 ### Option 1: Global Config (Recommended)
 
@@ -50,7 +50,7 @@ EOF
 
 Create `opencode-guard.config.json` in the same directory as your `opencode.json` (your OpenCode project root).
 
-> **Note**: The plugin does NOT work out-of-the-box. The `global_salt` is required for deterministic masking and must be provided by you.
+> **Note**: The plugin works out-of-the-box — if no config file exists, a minimal one with a random `global_salt` is auto-generated on first run. However, if you create a config file yourself, it **must** contain `global_salt`: an existing config without it disables the plugin (fail-safe).
 
 ---
 
@@ -64,6 +64,8 @@ The plugin searches for config in this order (first found wins):
 4. **`~/.config/opencode/opencode-guard.config.json`** — Global user config
 
 **Important**: Currently, configs do **NOT** merge. The first config file found is used as-is. If you have both global and project configs, only the project config will be loaded.
+
+**Auto-generation on first run**: If no config file is found in any of the locations above, the plugin automatically creates a minimal config at location 4 (`~/.config/opencode/opencode-guard.config.json`) containing a randomly generated `global_salt` (permissions `0600`), and enables itself immediately. You can edit the generated file at any time. If the file cannot be written, the plugin falls back to an in-memory random salt (mappings are lost on restart), prints a warning, and stays enabled.
 
 ---
 
@@ -124,7 +126,7 @@ The plugin searches for config in this order (first found wins):
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `enabled` | Enable/disable the plugin. **Note:** Plugin is disabled if no config file exists | `true` (when config present) |
+| `enabled` | Enable/disable the plugin. The plugin is enabled by default; only an explicit `enabled: false` disables it. If no config file exists at all, a minimal one is auto-generated on first run (see [Configuration File Locations](#configuration-file-locations)) | `true` |
 | `debug` | Enable debug logging | `false` |
 | `debug_file` | Append debug output to this file (only used when `debug` is on). Useful under OpenCode v2 where console output is invisible. **Warning:** may contain masked→original mappings and other sensitive values — enable only temporarily and delete the file after debugging | `""` (off) |
 | `global_salt` | **Required.** Secret salt for deterministic masking. Plugin won't work without this | (none — must be set) |
@@ -134,7 +136,7 @@ The plugin searches for config in this order (first found wins):
 | `masking.preserve_domains` | Preserve email domains when masking | `true` |
 | `masking.preserve_prefixes` | Preserve token prefixes (e.g., `sk-`, `ghp_`) | `true` |
 | `detection.parallel` | Run regex and AI detection in parallel | `true` |
-| `detection.ai_detection` | Enable AI-based detection | `false` |
+| `detection.ai_detection` | Enable AI-based detection. **This is the only feature disabled by default** — everything else works out of the box | `false` |
 | `detection.ai_provider` | AI provider: "local", "openai", or "custom" | `"local"` |
 | `detection.ai_timeout_ms` | Timeout for AI detection in milliseconds | `500` |
 | `exclude_llm_endpoints` | LLM endpoints to skip masking | `[]` |

@@ -15,7 +15,7 @@ OpenCode Guard 的完整配置说明。
 
 ## 快速设置
 
-**你必须创建 `opencode-guard.config.json` 文件**在以下任一位置：
+**无需配置文件即可开始使用**——首次运行时插件会自动生成一个（见[配置文件位置](#配置文件位置)）。只有需要自定义设置或使用自己的盐值时，才需要执行以下步骤。
 
 ### 方案 1：全局配置（推荐）
 
@@ -50,7 +50,7 @@ EOF
 
 在与 `opencode.json` 相同的目录（你的 OpenCode 项目根目录）创建 `opencode-guard.config.json`。
 
-> **注意**：插件不能开箱即用。`global_salt` 是确定性脱敏所必需的，必须由你自行提供。
+> **注意**：插件开箱即用——如果没有配置文件，首次运行时会自动生成包含随机 `global_salt` 的最小配置。但如果你自行创建配置文件，则**必须**包含 `global_salt`：已有配置缺少此项会禁用插件（fail-safe）。
 
 ---
 
@@ -64,6 +64,8 @@ EOF
 4. **`~/.config/opencode/opencode-guard.config.json`** — 全局用户配置
 
 **重要提示**：目前配置**不会合并**。找到的第一个配置文件将被完整使用。如果同时存在全局配置和项目配置，只有项目配置会被加载。
+
+**首次运行自动生成**：如果在上述任何位置都找不到配置文件，插件会在位置 4（`~/.config/opencode/opencode-guard.config.json`）自动创建最小配置，内含随机生成的 `global_salt`（权限 `0600`），并立即启用自身。生成的文件可随时编辑。如果文件写入失败，插件会回退为内存随机盐（重启后映射失效）、打印警告，并保持启用状态。
 
 ---
 
@@ -124,7 +126,7 @@ EOF
 
 | 选项 | 描述 | 默认值 |
 |-----|------|--------|
-| `enabled` | 启用/禁用插件。**注意：** 如果没有配置文件，插件将被禁用 | `true`（配置文件存在时） |
+| `enabled` | 启用/禁用插件。插件默认启用，只有显式设置 `enabled: false` 才会禁用。如果完全没有配置文件，首次运行时会自动生成最小配置（见[配置文件位置](#配置文件位置)） | `true` |
 | `debug` | 启用调试日志 | `false` |
 | `debug_file` | 将调试输出追加写入此文件（仅在 `debug` 开启时生效）。在 OpenCode v2 下控制台输出不可见时尤其有用。**警告：** 文件可能包含脱敏值→原始值的映射及其他敏感内容 — 请仅在临时调试时开启，调试结束后删除该文件 | `""`（关闭） |
 | `global_salt` | **必填。** 确定性脱敏的密钥盐值。没有此项插件无法工作 | （无 — 必须设置） |
@@ -134,7 +136,7 @@ EOF
 | `masking.preserve_domains` | 脱敏时保留邮箱域名 | `true` |
 | `masking.preserve_prefixes` | 保留令牌前缀（如 `sk-`, `ghp_`） | `true` |
 | `detection.parallel` | 正则和 AI 检测并行运行 | `true` |
-| `detection.ai_detection` | 启用基于 AI 的检测 | `false` |
+| `detection.ai_detection` | 启用基于 AI 的检测。**这是唯一默认关闭的功能**——其他所有功能均开箱即用 | `false` |
 | `detection.ai_provider` | AI 提供商："local", "openai", 或 "custom" | `"local"` |
 | `detection.ai_timeout_ms` | AI 检测超时时间（毫秒） | `500` |
 | `exclude_llm_endpoints` | 跳过脱敏的 LLM 端点 | `[]` |

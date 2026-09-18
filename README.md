@@ -90,15 +90,17 @@ ln -s ~/opencode-guard/src ~/.config/opencode/plugins/opencode-guard
 
 For a project-local install, use `.opencode/plugins/opencode-guard/` inside the project instead. On OpenCode v1, the `plugins` array in `opencode.json` (shown above) is the only option.
 
-### 2. Configure
+### 2. Configure (Optional)
 
-Generate a secure salt:
+The plugin works **out of the box**. On the first run, if no config file exists in any [supported location](docs/CONFIGURATION.md#configuration-file-locations), OpenCode Guard automatically creates a minimal config at `~/.config/opencode/opencode-guard.config.json` (permissions `0600`) containing a randomly generated `global_salt`. The plugin is enabled immediately — no manual setup required. You can edit the generated file at any time.
+
+To use your own salt or project-specific settings, generate a secure salt:
 
 ```bash
 openssl rand -base64 32
 ```
 
-Create config file at `~/.config/opencode/opencode-guard.config.json`:
+And create a config file (e.g. at `~/.config/opencode/opencode-guard.config.json`):
 
 ```json
 {
@@ -107,7 +109,7 @@ Create config file at `~/.config/opencode/opencode-guard.config.json`:
 }
 ```
 
-> ⚠️ **The plugin is disabled by default without configuration.** See [Configuration Guide](docs/CONFIGURATION.md) for all options.
+> The plugin is **enabled by default** — a config file is only required if you want to customize settings or set your own salt. To disable the plugin, set `"enabled": false` explicitly in your config. See [Configuration Guide](docs/CONFIGURATION.md) for all options.
 
 ### 3. Done
 
@@ -217,9 +219,9 @@ opencode
 > ⚠️ The debug file may contain masked→original mappings and other sensitive values — enable it only temporarily and delete the file after debugging.
 
 Common causes:
-- No config file found
-- `global_salt` not set
-- `enabled: false`
+- `enabled: false` is explicitly set in your config (the plugin is enabled by default)
+- Your config file exists but is missing `global_salt` (fail-safe: the plugin disables itself)
+- The auto-generated config could not be written (the plugin falls back to an in-memory salt and prints a warning — masking still works, but mappings are lost on restart)
 
 See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for detailed solutions.
 
