@@ -113,3 +113,97 @@ test('wrapResponse wraps JSON content type', async () => {
   const text = await new Response(wrapped.body).text();
   assert.strictEqual(text, '{"email":"user@example.com"}');
 });
+
+test('createJsonSafeSessionView exposes only JSON-safe masked keys', () => {
+  const session = makeSession();
+  addMapping(session, 'masked-safe-token', 'plain-original');
+  addMapping(session, 'masked-unsafe-token', 'pass"word\n123');
+
+  const view = createJsonSafeSessionView(session);
+  assert.deepStrictEqual(view.getMaskedKeys(), ['masked-safe-token']);
+  assert.strictEqual(typeof view.getMaskedKeyFingerprint(), 'string');
+});
+
+test('wrapResponse removes content-length and content-encoding headers', async () => {
+  const session = makeSession();
+  addMapping(session, 'masked-token-123', 'restored');
+
+  const response = new Response('{"key":"masked-token-123"}', {
+    headers: {
+      'content-type': 'application/json',
+      'content-length': '26',
+      'content-encoding': 'gzip',
+    },
+  });
+
+  const wrapped = wrapResponse(response, session);
+  assert.ok(wrapped);
+  assert.strictEqual(wrapped.headers.get('content-length'), null);
+  assert.strictEqual(wrapped.headers.get('content-encoding'), null);
+  assert.strictEqual(wrapped.headers.get('content-type'), 'application/json');
+
+  const text = await new Response(wrapped.body).text();
+  assert.strictEqual(text, '{"key":"restored"}');
+});
+
+test('wrapResponse returns original response when body is already used', async () => {
+  const session = makeSession();
+  const response = new Response('{"a":1}', { headers: { 'content-type': 'application/json' } });
+  await response.text(); // consumes the body
+
+  assert.strictEqual(wrapResponse(response, session), response);
+});
+
+test('wrapResponse returns original response when body is locked', () => {
+  const session = makeSession();
+  const response = new Response('{"a":1}', { headers: { 'content-type': 'application/json' } });
+  const reader = response.body.getReader();
+  try {
+    assert.strictEqual(wrapResponse(response, session), response);
+  } finally {
+    reader.releaseLock();
+  }
+});
+
+test('wrapResponse restores masked UUID and MAC inside JSON strings', async () => {
+  const session = makeSession();
+  const maskedUuid = '9f8e7d6c-1111-2222-3333-444455556666';
+  const originalUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const maskedMac = 'f0:de:bc:9a:78:56';
+  const originalMac = '00:1a:2b:3c:4d:5e';
+  addMapping(session, maskedUuid, originalUuid);
+  addMapping(session, maskedMac, originalMac);
+
+  const response = sseResponse(`data: {"id":"${maskedUuid}","mac":"${maskedMac}"}\n\n`);
+  const wrapped = wrapResponse(response, session);
+  const text = await new Response(wrapped.body).text();
+
+  assert.ok(text.includes(originalUuid), 'UUID restored');
+  assert.ok(text.includes(originalMac), 'MAC restored');
+  assert.ok(!text.includes(maskedUuid), 'masked UUID replaced');
+  assert.ok(!text.includes(maskedMac), 'masked MAC replaced');
+});
+
+test('wrapResponse restores token split across chunks', async () => {
+  const session = makeSession();
+  addMapping(session, 'ghp_abc123def4567890', 'mysecrettoken');
+
+  const body = 'data: {"delta":"token ghp_abc123def4567890 ok"}\n\n';
+  const bytes = new TextEncoder().encode(body);
+  const cut = bytes.indexOf(49); // split inside the masked token (first '1')
+  const response = new Response(
+    new ReadableStream({
+      start(c) {
+        c.enqueue(bytes.slice(0, cut));
+        c.enqueue(bytes.slice(cut));
+        c.close();
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } }
+  );
+
+  const wrapped = wrapResponse(response, session);
+  const text = await new Response(wrapped.body).text();
+  assert.ok(text.includes('mysecrettoken'), 'split token restored');
+  assert.ok(!text.includes('ghp_abc123'), 'masked token replaced');
+});
