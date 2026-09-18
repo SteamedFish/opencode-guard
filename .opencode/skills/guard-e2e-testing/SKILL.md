@@ -85,3 +85,35 @@ masked token the plugin just registered — so the displayed `echo:` line proves
 7. For a functional probe, **do not** rely on what the model prints: both the
    masked and unmasked paths can produce the same visible text. Wire-level capture
    (or `grep -c` on its log) is the only trustworthy evidence.
+
+## Pitfalls — round 2 (all hit in practice, 2026-09-19)
+
+8. **`grep -o`/`-oE` output is NOT trustworthy** when your own session's plugin is
+   loaded: extracted email/token-shaped values in the OUTPUT get masked by
+   `tool.execute.after` before you see them (observed: extraction output rendered
+   as empty). Only `grep -c` counts (and `cat -A`/`tail` for STRUCTURE, never for
+   value comparison) are reliable. Consequence of pitfall 1, easy to forget.
+9. **Plugin id dedup: the global plugin shadows the sandbox one.** When both
+   `~/.config/opencode/plugins/opencode-guard` and the sandbox opencode.jsonc
+   `plugins: ["file:///...worktree/src"]` are present, they share the plugin id
+   and only ONE loads — the global one. Your sandbox then silently runs the MAIN
+   checkout's code, not the worktree's. During worktree E2E, repoint the global
+   symlink at the worktree src (`ln -sfn .../worktree/src ~/.config/opencode/plugins/opencode-guard`)
+   and **restore it to the main src when done**. First symptom of shadowing: code
+   changes "have no effect" in probes.
+10. **`debug_file` only writes when `debug: true` is also set**
+    (`fileEnabled = debug && debugFile`). A config with `debug_file` but no
+    `debug` produces no file at all — absence of the file is not proof the
+    plugin didn't load.
+11. **Capture-server restart procedure** (two real failures): `$!` from
+    `nohup ... &` may not be the python PID; `pgrep -f "capture-serve[r]"`
+    also matches your own `bash -c` wrapper. Correct procedure:
+    `pgrep -af "capture-serve[r]" | grep python3` → `kill -9 <pid>` → confirm the
+    port is free (`ss -tlnp | grep <port>` shows nothing) → start → confirm the
+    new process args show the intended `--mode` before probing. A stale server
+    answering in the wrong mode silently invalidates probe results.
+12. **v2 byte-level restore cannot see values split across SSE events** (fixed
+    by SSE-aware restore; if you ever revert it): two `delta.content` strings
+    have JSON/SSE framing between them, so a key split across events is never
+    contiguous in raw bytes. When testing restore, always include a probe where
+    the masked value is split across two SSE events (capture-server `--mode=echo-split`).
