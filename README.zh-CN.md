@@ -15,6 +15,21 @@ OpenCode Guard 是一个专注于隐私保护的 [OpenCode](https://opencode.ai)
 - 🔒 **确定性**：相同输入 + 相同盐值 = 相同脱敏输出
 - ⚡ **并行检测**：正则表达式和 AI 检测同时运行
 - 🔌 **LLM + MCP 支持**：同时支持 LLM API 调用和 MCP 工具调用的脱敏
+- 🧩 **OpenCode v1 + v2 支持**：同时兼容 v1（>=1.18.29）和 v2 插件 API
+
+## OpenCode v2 支持
+
+本插件通过双兼容入口同时支持两个 OpenCode 版本：
+
+- **OpenCode v1**（>=1.18.29）：调用对象入口的 `server()` 函数
+- **OpenCode v2**：使用 `Plugin.define` 风格的 `id` + `setup(ctx)` 对象。在 v2 中，插件通过 `plugins` 配置项（而不是 `plugin`）加载
+
+v2 上的工作原理：
+
+- **出站脱敏**在 session 的 `context` / `compaction` / `generate` / `title` 钩子中完成。持久化的历史记录保留原始值；脱敏仅应用于每次出站的模型请求。
+- **内置工具和 MCP 工具**的参数和结果通过 `tool.execute.before` / `tool.execute.after` 进行脱敏/还原。在 v2 中，MCP 工具是普通工具，命名为 `<server>_<tool>`。
+- **响应还原**通过包装提供商 HTTP 响应流（`http.response` 钩子）实现，且仅还原 **JSON 安全的原始值**——包含 `"`、`\` 或控制字符的值在原始流中保持脱敏状态，以避免破坏 JSON/SSE 帧。
+- **WebSocket 传输**（如部分 v2 流式提供商）通过 `experimental.ws.receive` 获得尽力而为的逐帧还原；跨帧拆分的令牌有意不做还原。
 - 🚫 **排除端点**：可配置特定端点跳过脱敏
 - 💾 **内存存储**：不持久化存储敏感信息
 

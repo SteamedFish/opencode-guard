@@ -1,7 +1,7 @@
 # OPENCODE GUARD KNOWLEDGE BASE
 
 **Generated:** 2026-03-29 14:20 UTC  
-**Version:** 0.1.0  
+**Version:** 0.2.0  
 **License:** GPL-3.0-or-later
 
 ## OVERVIEW
@@ -11,7 +11,10 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 ```
 ./
 ├── src/
-│   ├── index.js           # Plugin entry point - OpenCode hooks
+│   ├── index.js           # Plugin entry point - dual-compat { id, setup (v2), server (v1) }
+│   ├── guard-core.js      # createGuardCore - shared init (config, patterns, sessions, exclusions)
+│   ├── v2.js              # setupV2 + createV2Handlers - OpenCode v2 hook registrations
+│   ├── response-unmasker.js  # wrapResponse / JSON-safe session view for v2 HTTP streams
 │   ├── engine.js          # Redact/redactDeep - core masking logic
 │   ├── detector.js        # Pattern-based sensitive data detection
 │   ├── patterns.js        # Built-in patterns (email, uuid, ipv4, etc.)
@@ -46,7 +49,7 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 | Add new data type masker | `src/maskers/` | Create new file + export in `index.js` |
 | Add detection pattern | `src/patterns.js` | Add to `BUILTIN` Map or via config |
 | Change masking behavior | `src/maskers/*.js` | Each type has dedicated masker |
-| Plugin hooks | `src/index.js` | 5 OpenCode lifecycle hooks |
+| Plugin hooks | `src/index.js` (v1 entry), `src/v2.js` (v2 hooks), `src/guard-core.js` (shared init) |
 | Configuration schema | `opencode-guard.config.json.example` | All options documented |
 | Tests | `tests/` | Mirror structure - one test per source file |
 
@@ -117,11 +120,20 @@ OPENCODE_GUARD_DEBUG=1 npm test
 ## NOTES
 
 ### OpenCode Plugin Lifecycle
-1. **Load**: `OpenCodeGuard(ctx)` called, config loaded
-2. **Transform**: `experimental.chat.messages.transform` - mask outgoing
-3. **Complete**: `experimental.text.complete` - restore incoming
-4. **MCP Before**: `mcp.tool.call.before` - mask tool args
-5. **MCP After**: `mcp.tool.call.after` - restore tool result
+The plugin has a dual-compat entry point (`export default { id, setup, server }`):
+- **v1** (OpenCode >=1.18.29) calls `server(ctx)` → returns a hooks object:
+  1. **Transform**: `experimental.chat.messages.transform` - mask outgoing
+  2. **Complete**: `experimental.text.complete` - restore incoming
+  3. **Streaming**: `experimental.text.chunk` / `experimental.stream.end` - streaming restore
+  4. **MCP Before/After**: `mcp.tool.call.before` / `mcp.tool.call.after` - mask tool args / results
+  5. **Tool Before/After**: `tool.execute.before` / `tool.execute.after` - restore built-in tool args, mask results
+- **v2** calls `setup(ctx)` (in `src/v2.js`) and registers hooks via domain methods:
+  1. `ctx.session.hook('context'|'compaction'|'generate'|'title', maskRequest)` - mask outgoing (per request; persisted history keeps originals)
+  2. `ctx.tool.hook('execute.before'|'execute.after', ...)` - built-in + MCP tools (MCP tools are named `<server>_<tool>`)
+  3. `ctx.session.hook('http.response', ...)` - wraps the provider Response stream for restoration (JSON-safe originals only)
+  4. `ctx.session.hook('experimental.ws.handshake'|'experimental.ws.receive', ...)` - best-effort per-frame WS restore
+  5. v2 baseURL exclusion resolved via `ctx.provider.get({ providerID })` → `data?.settings?.baseURL` (cached per providerID)
+  6. v2 MCP server names via `ctx.mcp.list()` (cached 5s); sanitize = `s.replace(/[^a-zA-Z0-9_-]/g, '_')`
 
 ### Session Management
 - Sessions keyed by `sessionID` from OpenCode context

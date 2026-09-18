@@ -15,6 +15,21 @@ OpenCode Guard is a privacy-focused plugin for [OpenCode](https://opencode.ai) t
 - 🔒 **Deterministic**: Same input + same salt = same masked output
 - ⚡ **Parallel Detection**: Regex + AI detection run simultaneously
 - 🔌 **LLM + MCP Support**: Masks both LLM API calls and MCP tool invocations
+- 🧩 **OpenCode v1 + v2**: Supports both the v1 plugin API (>=1.18.29) and the v2 plugin API
+
+## OpenCode v2 support
+
+The plugin supports both OpenCode versions via a dual-compat entry point:
+
+- **OpenCode v1** (>=1.18.29): calls the object entrypoint's `server()` function
+- **OpenCode v2**: uses the `Plugin.define`-style `id` + `setup(ctx)` object. In v2, plugins are configured with the `plugins` key (not `plugin`)
+
+How it works on v2:
+
+- **Outgoing masking** happens in the session `context` / `compaction` / `generate` / `title` hooks. Persisted history keeps the originals; masking is applied per outgoing model request.
+- **Built-in and MCP tool** arguments and results are masked/restored via `tool.execute.before` / `tool.execute.after`. In v2, MCP tools are ordinary tools named `<server>_<tool>`.
+- **Response restoration** wraps the provider HTTP response stream (`http.response` hook) and only restores **JSON-safe originals** — values containing `"`, `\`, or control characters stay masked in raw streams to avoid corrupting JSON/SSE frames.
+- **WebSocket transports** (e.g. some v2 streaming providers) get best-effort per-frame restoration via `experimental.ws.receive`; tokens split across frames are intentionally not restored.
 - 🚫 **Excluded Endpoints**: Configure specific endpoints to skip masking
 - 💾 **In-Memory Storage**: No persistent storage of secrets
 
