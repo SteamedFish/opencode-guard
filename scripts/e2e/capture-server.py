@@ -6,7 +6,7 @@ Used for end-to-end testing of opencode-guard: point a test provider at this
 server, run `opencode run` against it, then inspect the capture log to prove
 what did (masked) and did not (original) leave the machine.
 
-Usage: capture-server.py [port] [capture-log-path] [--mode=MODE]
+Usage: capture-server.py [port] [capture-log-path] [--mode=MODE] [flags...]
 Defaults: port 15151, log ./capture.log, mode echo
 
 Modes:
@@ -23,10 +23,26 @@ Modes:
               embedding the last email in the request body. With a
               "role":"tool" message (second round-trip): plain single-chunk
               echo plus a "=== TOOL-ROUND ===" marker line in the log.
+  tool-split  Like tool, but the tool-call function.arguments JSON string is
+              split across TWO SSE delta chunks, with the split point in the
+              MIDDLE of the email value inside the arguments (fragment 1 ends
+              mid-email; fragment 2 starts with the rest). If no email is
+              found in the request, split at half the arguments length.
+              Second round-trip behaves like tool mode.
   echo-message  Stream the text of the LAST "role":"user" message back
               verbatim, split into 3 content chunks (no "echo: " prefix) -
               proves restore of non-email masked values (e.g. street
               addresses). Falls back to "no-user-text".
+
+Flags (independent, combinable with any mode and each other):
+  --crlf      Emit all SSE line endings as \\r\\n (frames end with \\r\\n\\r\\n).
+  --keepalive Emit one SSE comment line ": ka" before the first data event,
+              and one between the first and second data events.
+  --no-done   Omit the final "data: [DONE]" frame; the stream just ends
+              after the finish chunk.
+  --reasoning Insert an extra FIRST data chunk whose delta is
+              {"role":"assistant","reasoning_content":"<email>"} (the same
+              echoed email the mode would use), before the normal chunks.
 """
 import json
 import re
@@ -37,9 +53,23 @@ args = sys.argv[1:]
 PORT = int(args[0]) if len(args) > 0 else 15151
 LOG = args[1] if len(args) > 1 else 'capture.log'
 MODE = 'echo'
+CRLF = False
+KEEPALIVE = False
+NO_DONE = False
+REASONING = False
 for a in args[2:]:
     if a.startswith('--mode='):
         MODE = a.split('=', 1)[1]
+    elif a == '--crlf':
+        CRLF = True
+    elif a == '--keepalive':
+        KEEPALIVE = True
+    elif a == '--no-done':
+        NO_DONE = True
+    elif a == '--reasoning':
+        REASONING = True
+
+EOL = '\r\n' if CRLF else '\n'
 
 # Matches the masked forms of emails/tokens the plugin produces. Extend as needed.
 EMAIL_RE = re.compile(rb'[\w.+-]+@[\w-]+\.[\w.]+')
@@ -53,11 +83,24 @@ def chunk(delta, finish=None):
         "id": "chatcmpl-capture", "object": "chat.completion.chunk",
         "created": 1789739000, "model": "probe",
         "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-    }) + "\n\n"
+    }) + EOL + EOL
+
+
+def keepalive():
+    return ": ka" + EOL + EOL
 
 
 def sse_body(parts):
-    return ("".join(parts) + "data: [DONE]\n\n").encode()
+    out = []
+    if KEEPALIVE:
+        out.append(keepalive())
+    for i, p in enumerate(parts):
+        if KEEPALIVE and i == 1:
+            out.append(keepalive())
+        out.append(p)
+    if not NO_DONE:
+        out.append("data: [DONE]" + EOL + EOL)
+    return "".join(out).encode()
 
 
 def last_email(body):
@@ -104,29 +147,29 @@ def tool_arguments(tool, email):
 
 
 def build_echo(email):
-    return sse_body([
+    return [
         chunk({"role": "assistant", "content": "echo: " + email}),
         chunk({}, "stop"),
-    ])
+    ]
 
 
 def build_echo_split(email):
     if len(email) < 4:
         return build_echo(email)
     half = len(email) // 2
-    return sse_body([
+    return [
         chunk({"role": "assistant", "content": "echo: " + email[:half]}),
         chunk({"content": email[half:] + "abcdef"}),
         chunk({}, "stop"),
-    ])
+    ]
 
 
 def build_echo_last(email):
-    return sse_body([
+    return [
         chunk({"role": "assistant", "content": "working... "}),
         chunk({"content": "echo: " + email}),
         chunk({}, "stop"),
-    ])
+    ]
 
 
 def last_user_text(req):
@@ -160,11 +203,11 @@ def build_echo_message(text):
             delta = {"role": "assistant", "content": piece}
         parts.append(chunk(delta))
     parts.append(chunk({}, "stop"))
-    return sse_body(parts)
+    return parts
 
 
 def build_tool(name, arguments):
-    return sse_body([
+    return [
         chunk({"role": "assistant", "tool_calls": [{
             "index": 0, "id": "call_capture1", "type": "function",
             "function": {"name": name, "arguments": ""},
@@ -173,24 +216,48 @@ def build_tool(name, arguments):
             "index": 0, "function": {"arguments": arguments},
         }]}),
         chunk({}, "tool_calls"),
-    ])
+    ]
+
+
+def build_tool_split(name, arguments, email):
+    """Like build_tool, but split the arguments JSON across two delta chunks,
+    with the split point in the MIDDLE of the email value inside the
+    arguments (fragment 1 ends mid-email; fragment 2 starts with the rest).
+    If the email is not found in the arguments, split at half its length."""
+    idx = arguments.find(email) if email else -1
+    if idx >= 0 and len(email) >= 2:
+        split = idx + len(email) // 2
+    else:
+        split = len(arguments) // 2
+    frag1, frag2 = arguments[:split], arguments[split:]
+    return [
+        chunk({"role": "assistant", "tool_calls": [{
+            "index": 0, "id": "call_capture1", "type": "function",
+            "function": {"name": name, "arguments": frag1},
+        }]}),
+        chunk({"tool_calls": [{
+            "index": 0, "function": {"arguments": frag2},
+        }]}),
+        chunk({}, "tool_calls"),
+    ]
 
 
 def build_response(body):
-    """Return SSE bytes for the configured mode."""
+    """Return SSE bytes for the configured mode and flags."""
     email = last_email(body) or FALLBACK_ECHO
+    parts = None
     if MODE == 'echo-split':
-        return build_echo_split(email)
-    if MODE == 'echo-last':
-        return build_echo_last(email)
-    if MODE == 'echo-message':
+        parts = build_echo_split(email)
+    elif MODE == 'echo-last':
+        parts = build_echo_last(email)
+    elif MODE == 'echo-message':
         try:
             req = json.loads(body)
         except ValueError:
             req = {}
         text = last_user_text(req) or 'no-user-text'
-        return build_echo_message(text)
-    if MODE == 'tool':
+        parts = build_echo_message(text)
+    elif MODE in ('tool', 'tool-split'):
         try:
             req = json.loads(body)
         except ValueError:
@@ -201,15 +268,24 @@ def build_response(body):
         )
         if has_tool_round:
             round_email = last_email(body) or TOOL_ROUND_FALLBACK
-            return build_echo(round_email)
-        tool = pick_tool(req)
-        if tool is not None:
-            args_json = tool_arguments(tool, email)
-            if args_json is not None:
-                return build_tool((tool.get('function') or {}).get('name'),
-                                  args_json)
-        # No usable tools: fall back to plain echo text mode.
-    return build_echo(email)
+            parts = build_echo(round_email)
+        else:
+            tool = pick_tool(req)
+            if tool is not None:
+                args_json = tool_arguments(tool, email)
+                if args_json is not None:
+                    name = (tool.get('function') or {}).get('name')
+                    if MODE == 'tool-split':
+                        parts = build_tool_split(name, args_json, email)
+                    else:
+                        parts = build_tool(name, args_json)
+            # No usable tools: fall back to plain echo text mode.
+    if parts is None:
+        parts = build_echo(email)
+    if REASONING:
+        parts = [chunk({"role": "assistant",
+                        "reasoning_content": email})] + parts
+    return sse_body(parts)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -218,7 +294,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(n) if n else b''
         # Detect a second round-trip (after tool execution) for the log marker.
         marker = b''
-        if MODE == 'tool':
+        if MODE in ('tool', 'tool-split'):
             try:
                 req = json.loads(body)
             except ValueError:
@@ -261,5 +337,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    print(f'capture server on 127.0.0.1:{PORT}, logging to {LOG}, mode {MODE}')
+    flags = []
+    if CRLF:
+        flags.append('crlf')
+    if KEEPALIVE:
+        flags.append('keepalive')
+    if NO_DONE:
+        flags.append('no-done')
+    if REASONING:
+        flags.append('reasoning')
+    flag_str = (', flags ' + ','.join(flags)) if flags else ''
+    print(f'capture server on 127.0.0.1:{PORT}, logging to {LOG}, '
+          f'mode {MODE}{flag_str}')
     HTTPServer(('127.0.0.1', PORT), Handler).serve_forever()

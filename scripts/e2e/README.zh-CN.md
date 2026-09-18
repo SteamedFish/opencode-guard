@@ -12,7 +12,7 @@
 标准库，单文件。
 
 ```bash
-python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE]
+python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE] [flags...]
 # 默认值：端口 15151，日志 ./capture.log，模式 echo
 ```
 
@@ -24,7 +24,21 @@ python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE]
 | `echo-split` | 被回显的 email 拆到两个 content chunk（大致对半）；第 2 个 chunk 末尾附加 `abcdef` 后缀（6 个十六进制字符，不属于 email），用于测试 unmasker 的 hold-back 逻辑不会误吞尾随文本。短于 4 个字符的 email 不拆分。 |
 | `echo-last` | 第一个 chunk 是填充文本 `working... `；回显的 email 只出现在第二个（最后一个 content）chunk 中，紧挨着 `finish_reason` chunk —— 用于测试流结束时的 flush 行为。 |
 | `tool` | 请求中没有 `"role":"tool"` 消息时：以 OpenAI 流式 `tool_call` 响应，选择第一个名为 `write` 的工具（否则 `bash`，否则数组第一个），参数中嵌入请求体里最后一个 email（`write`/`bash` 会把它写入沙箱 cwd 下的 `tool-probe-output.txt`）。请求中含 `"role":"tool"` 消息时（工具执行后的第二轮）：普通的单 chunk 回显，并在捕获日志中写入 `=== TOOL-ROUND ===` 标记行。 |
+| `tool-split` | 与 `tool` 类似，但 tool-call 的 `function.arguments` JSON 字符串被拆到两个 SSE delta chunk 中，拆分点位于 arguments 内 email 值的正中（第 1 个片段在 email 中间结束，第 2 个片段从剩余部分开始）。请求中没有 email 时按 arguments 长度对半拆。第二轮行为与 `tool` 模式完全一致（普通回显 + `=== TOOL-ROUND ===` 标记）。 |
 | `echo-message` | 解析请求 JSON，把最后一条 `user` 消息的文本原样流式返回，拆成 3 个大致均等的 content chunk（不带 `echo: ` 前缀）。同时支持字符串 content 和数组 parts content（text 部分以空格连接）；没有 user 消息或没有文本时回复 `no-user-text`。用于验证 response-restore 钩子能还原非 email 类型的掩码值（例如 AI 检测出的街道地址）。 |
+
+### 标志位
+
+相互独立的标志位，可与任意模式组合，彼此也可组合（例如
+`--mode=echo-split --crlf --keepalive --no-done`、
+`--mode=tool-split --reasoning`）：
+
+| 标志 | 行为 |
+|------|----------|
+| `--crlf` | 所有 SSE 行尾使用 `\r\n`（帧以 `\r\n\r\n` 结束），代替 `\n`。 |
+| `--keepalive` | 在第一个 data 事件之前发送一行 SSE 注释 `: ka`，并在第一个与第二个 data 事件之间再发送一行。 |
+| `--no-done` | 省略最后的 `data: [DONE]` 帧 —— 流在 finish chunk 之后直接结束。 |
+| `--reasoning` | 在正常 chunk 之前插入一个额外的首个 data chunk，其 delta 为 `{"role":"assistant","reasoning_content":"<email>"}`（使用该模式本会回显的同一个 email）。 |
 
 在所有模式下，每个请求体都会按原样追加到捕获日志。
 
