@@ -58,6 +58,7 @@ KEEPALIVE = False
 NO_DONE = False
 REASONING = False
 PREFER_TOOL = None
+PREFER_STATE = {'called': False}
 TOOL_STDOUT = False
 for a in args[2:]:
     if a.startswith('--mode='):
@@ -111,7 +112,10 @@ def sse_body(parts):
 
 def last_email(body):
     emails = EMAIL_RE.findall(body)
-    return emails[-1].decode() if emails else None
+    # The greedy trailing [\w.]+ can swallow a sentence-final period after the
+    # email (e.g. "... is X@y.z. Reply"), which would make tool args carry a
+    # DIFFERENT string than the wire-masked email (extra masked variant).
+    return emails[-1].decode().rstrip('.') if emails else None
 
 
 def pick_tool(req):
@@ -136,8 +140,10 @@ def tool_arguments(tool, email):
     to plain echo text mode."""
     name = (tool.get('function') or {}).get('name')
     if name == 'write':
+        # opencode v2 write tool schema uses "path" (older builds used
+        # "filePath"); extra keys fail additionalProperties:false validation.
         return json.dumps({
-            "filePath": "tool-probe-output.txt",
+            "path": "tool-probe-output.txt",
             "content": "captured secret: " + email,
         })
     if name in ('bash', 'shell'):
@@ -282,20 +288,36 @@ def build_response(body):
             isinstance(m, dict) and m.get('role') == 'tool'
             for m in (req.get('messages') or [])
         )
-        if has_tool_round:
-            round_email = last_email(body) or TOOL_ROUND_FALLBACK
-            parts = build_echo(round_email)
+        # --prefer-tool deferral: MCP tools join the request's tools array
+        # only AFTER the MCP server finishes connecting, which races round 1
+        # (observed: round-1 body lacks the tool, round-2 has it). While the
+        # preferred tool is absent, make a normal (round-forcing) tool call;
+        # once it appears, call it exactly once, then fall back to echo.
+        prefer = None
+        if PREFER_TOOL:
+            for t in (req.get('tools') or []):
+                if (t.get('function') or {}).get('name') == PREFER_TOOL:
+                    prefer = t
+                    break
+        if prefer is not None and not PREFER_STATE['called']:
+            PREFER_STATE['called'] = True
+            tool = prefer
+        elif has_tool_round:
+            tool = None  # terminal echo below
         else:
             tool = pick_tool(req)
-            if tool is not None:
-                args_json = tool_arguments(tool, email)
-                if args_json is not None:
-                    name = (tool.get('function') or {}).get('name')
-                    if MODE == 'tool-split':
-                        parts = build_tool_split(name, args_json, email)
-                    else:
-                        parts = build_tool(name, args_json)
-            # No usable tools: fall back to plain echo text mode.
+        if tool is not None:
+            args_json = tool_arguments(tool, email)
+            if args_json is not None:
+                name = (tool.get('function') or {}).get('name')
+                if MODE == 'tool-split':
+                    parts = build_tool_split(name, args_json, email)
+                else:
+                    parts = build_tool(name, args_json)
+        if parts is None and has_tool_round:
+            round_email = last_email(body) or TOOL_ROUND_FALLBACK
+            parts = build_echo(round_email)
+        # No usable tools: parts stays None -> plain echo fallback below.
     if parts is None:
         parts = build_echo(email)
     if REASONING:
