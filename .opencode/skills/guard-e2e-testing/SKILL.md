@@ -100,7 +100,12 @@ masked token the plugin just registered — so the displayed `echo:` line proves
    checkout's code, not the worktree's. During worktree E2E, repoint the global
    symlink at the worktree src (`ln -sfn .../worktree/src ~/.config/opencode/plugins/opencode-guard`)
    and **restore it to the main src when done**. First symptom of shadowing: code
-   changes "have no effect" in probes.
+   changes "have no effect" in probes. (v2 hot-unload IS supported: the plugin
+   supervisor reconciles the desired set on fs/config events, so symlink swaps
+   and `"-opencode-guard"` negation entries in the `plugins` array unload hooks
+   for existing+new sessions without a restart. Caveat: teardown is a positional
+   prefix diff — later-loaded plugins get re-created too. v1 loader has NO
+   watcher/unload.)
 10. **`debug_file` only writes when `debug: true` is also set**
     (`fileEnabled = debug && debugFile`). A config with `debug_file` but no
     `debug` produces no file at all — absence of the file is not proof the
