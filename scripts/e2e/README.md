@@ -39,6 +39,8 @@ meaningful (e.g. `--mode=echo-split --crlf --keepalive --no-done`,
 | `--keepalive` | Emit one SSE comment line `: ka` before the first data event, and one between the first and second data events. |
 | `--no-done` | Omit the final `data: [DONE]` frame — the stream just ends after the finish chunk. |
 | `--reasoning` | Insert an extra FIRST data chunk whose delta is `{"role":"assistant","reasoning_content":"<email>"}` (the same echoed email the mode would use), before the normal chunks. |
+| `--prefer-tool=NAME` | In `tool`/`tool-split` modes, pick the tool named NAME from the request's tools array instead of the default `write`→`bash`→first preference order. Needed because tool sets differ per agent/distribution (e.g. the shell tool may be named `shell`, MCP tools may be absent). |
+| `--tool-stdout` | For shell-style tools (`bash`/`shell`): print the secret to stdout instead of redirecting it into `tool-probe-output.txt`, so the tool RESULT carries the secret (tests `tool.execute.after` result masking on the next-round request body). |
 
 In all modes every request body is appended to the capture log exactly as
 received.

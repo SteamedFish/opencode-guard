@@ -57,6 +57,8 @@ CRLF = False
 KEEPALIVE = False
 NO_DONE = False
 REASONING = False
+PREFER_TOOL = None
+TOOL_STDOUT = False
 for a in args[2:]:
     if a.startswith('--mode='):
         MODE = a.split('=', 1)[1]
@@ -68,6 +70,10 @@ for a in args[2:]:
         NO_DONE = True
     elif a == '--reasoning':
         REASONING = True
+    elif a.startswith('--prefer-tool='):
+        PREFER_TOOL = a.split('=', 1)[1]
+    elif a == '--tool-stdout':
+        TOOL_STDOUT = True
 
 EOL = '\r\n' if CRLF else '\n'
 
@@ -109,10 +115,15 @@ def last_email(body):
 
 
 def pick_tool(req):
-    """First tool named 'write', else 'bash', else the first tool. None if no tools."""
+    """--prefer-tool=NAME if present, else first tool named 'write', else
+    'bash', else the first tool. None if no tools."""
     tools = req.get('tools') or []
     if not tools:
         return None
+    if PREFER_TOOL:
+        for t in tools:
+            if (t.get('function') or {}).get('name') == PREFER_TOOL:
+                return t
     for want in ('write', 'bash'):
         for t in tools:
             if (t.get('function') or {}).get('name') == want:
@@ -129,11 +140,16 @@ def tool_arguments(tool, email):
             "filePath": "tool-probe-output.txt",
             "content": "captured secret: " + email,
         })
-    if name == 'bash':
-        return json.dumps({
-            "command": "printf '%%s\\n' '%s' > tool-probe-output.txt" % email,
-            "description": "write probe file",
-        })
+    if name in ('bash', 'shell'):
+        # Shell-style tool (named 'bash' or 'shell' depending on the opencode
+        # distribution). Command-only args: extra fields like "description"
+        # violate additionalProperties:false on some tool schemas.
+        # --tool-stdout prints the secret to stdout instead of redirecting to a
+        # file, so the tool RESULT carries it (tests tool.execute.after masking).
+        cmd = "printf '%%s\\n' '%s'" % email
+        if not TOOL_STDOUT:
+            cmd += " > tool-probe-output.txt"
+        return json.dumps({"command": cmd})
     # Best-effort for any other tool: first required string property from its
     # parameters schema, as a single-string-arg object.
     params = (tool.get('function') or {}).get('parameters') or {}

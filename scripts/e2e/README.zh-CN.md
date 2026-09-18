@@ -39,6 +39,8 @@ python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE] [f
 | `--keepalive` | 在第一个 data 事件之前发送一行 SSE 注释 `: ka`，并在第一个与第二个 data 事件之间再发送一行。 |
 | `--no-done` | 省略最后的 `data: [DONE]` 帧 —— 流在 finish chunk 之后直接结束。 |
 | `--reasoning` | 在正常 chunk 之前插入一个额外的首个 data chunk，其 delta 为 `{"role":"assistant","reasoning_content":"<email>"}`（使用该模式本会回显的同一个 email）。 |
+| `--prefer-tool=NAME` | 在 `tool`/`tool-split` 模式下，从请求的 tools 数组中选择名为 NAME 的工具，代替默认的 `write`→`bash`→第一个 优先级。必须项：不同 agent/发行版的工具集不同（例如 shell 工具可能叫 `shell`，MCP 工具可能根本不存在）。 |
+| `--tool-stdout` | 对 shell 类工具（`bash`/`shell`）：把秘密打印到 stdout 而不是重定向进 `tool-probe-output.txt`，使工具【结果】携带秘密（测试下一轮请求 body 中 `tool.execute.after` 的结果 masking）。 |
 
 在所有模式下，每个请求体都会按原样追加到捕获日志。
 
