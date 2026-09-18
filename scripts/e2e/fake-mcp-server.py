@@ -7,17 +7,39 @@ testing of opencode-guard's MCP masking: the tool result embeds fixed probe
 secrets (an email and an API token) that the plugin under test is supposed to
 mask before they reach the model.
 
+If the env var FAKE_MCP_LOG is set, one line per received tools/call is
+appended to that file: `<method> <tool-name> <compact-json-of-arguments>`.
+This gives decisive evidence for MCP exclusion probes (the wire cannot show
+whether the MCP server received masked or original args). Set it via the MCP
+server entry's "environment" in the opencode config. Logging failures are
+swallowed - logging must never break the server.
+
 Usage: fake-mcp-server.py
 Reads JSON-RPC messages from stdin line by line, writes replies to stdout,
 logs received method names to stderr. Exits on EOF.
 """
 import json
+import os
 import sys
 
 PROTOCOL_VERSION = "2024-11-05"
 
 FIXED_EMAIL = "mcp-probe@mailfence-test.net"
 FIXED_TOKEN = "mcpTok9f4ab71c3d"
+
+
+def log_call(name, arguments):
+    """Append one line per tools/call to $FAKE_MCP_LOG (if set)."""
+    path = os.environ.get('FAKE_MCP_LOG')
+    if not path:
+        return
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write('%s %s %s\n' % (
+                'tools/call', name,
+                json.dumps(arguments, separators=(',', ':'))))
+    except Exception:
+        pass  # logging must never break the server
 
 
 def reply(msg_id, result):
@@ -68,11 +90,13 @@ def handle(msg):
         })
     elif method == "tools/call":
         params = msg.get("params") or {}
-        key = (params.get("arguments") or {}).get("key")
+        arguments = params.get("arguments") or {}
+        key = arguments.get("key")
+        log_call(params.get("name"), arguments)
         reply(msg_id, {
             "content": [{
                 "type": "text",
-                "text": "Record for %s: email %s, api token %s" % (
+                "text": "Record for %s: email %s, api_key=%s" % (
                     key, FIXED_EMAIL, FIXED_TOKEN),
             }],
             "isError": False,

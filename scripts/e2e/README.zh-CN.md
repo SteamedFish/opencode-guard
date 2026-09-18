@@ -71,11 +71,19 @@ kill $PID
     "fake": {
       "type": "local",
       "command": ["python3", "/abs/path/scripts/e2e/fake-mcp-server.py"],
-      "enabled": true
+      "enabled": true,
+      // 可选：把每个收到的 tools/call 的参数记录到文件。
+      // 是 MCP 排除 probe 的决定性证据 —— 线上流量无法显示
+      // 服务器收到的是掩码参数还是原始参数。
+      "environment": {"FAKE_MCP_LOG": "/abs/path/received.log"}
     }
   }
 }
 ```
+
+设置 `FAKE_MCP_LOG` 后，每个 `tools/call` 会向该文件追加一行：
+`<method> <tool-name> <紧凑 JSON 参数>`。日志失败会被吞掉 —— 日志绝不
+影响服务器运行。未设置则不记录。
 
 ### 冒烟测试
 
@@ -88,10 +96,45 @@ printf '%s\n' \
   | python3 scripts/e2e/fake-mcp-server.py
 ```
 
+## verify-probe.py —— 自包含断言驱动器
+
+用于 probe 运行的断言驱动器。执行 E2E probe 的 agent 在自己的会话中
+加载了被测插件，因此任何经过该 agent shell 命令的 probe 值都可能被
+不可预测地掩码/还原 —— 内联 `grep -c '<probe>' capture.log` 的结果
+不可靠。verify-probe.py 因此不接受任何 probe 值作为参数：它从运行
+转录（out.txt）推导 probe email，并从 `fake-mcp-server.py` 读取 MCP
+fixture 秘密，所有断言都在进程内计算。输出只有 PASS/FAIL 行和计数 ——
+绝不打印提取出的秘密值。
+
+```bash
+python3 scripts/e2e/verify-probe.py <capture.log> <out.txt> [--mode=restore|unmasked|tool-file] [--mcp] [--probe-file <path>] [--allow-wire-variants]
+# 默认值：模式 restore，probe 文件 ./tool-probe-output.txt（仅 tool-file 模式使用）
+```
+
+| 标志 | 效果 |
+|------|----------|
+| `--allow-wire-variants` | 放宽 A5：out.txt 中字节级出现在 capture.log 里的残留 email 形 token 也被允许。理由：MCP 工具的调用参数与工具结果以掩码形式存于转录中（`execute.before`/`execute.after`），因此磁盘上的转录合法地包含曾上线的掩码变体。半还原的片段无法字节级匹配完整的线上变体，因此该放宽对部分还原损坏依然严格。 |
+
+| 断言 | 模式 | 含义 |
+|-----------|-------|---------|
+| A1 derive-probe | 全部 | 能从 out.txt 唯一推导出 probe email（只有一个不同的 email 形 token，或有唯一无歧义的 `echo:` 行）。域名无点的 token（如 `x@explorer` 之类的 agent 提及残留物）会被忽略。使用 `--mcp` 时，fixture 的 FIXED_EMAIL 会被排除在候选之外（最后的 `echo:` 行回显的是 fixture 的 email —— 它是最终请求体中的最后一个 email）；真正的 probe 以还原形式出现在工具调用行上，因此此时含 `{"` 的行（工具调用参数）也用于消歧。 |
+| A2 no-leak | restore、tool-file | probe email 在 capture.log 中的字节计数 == 0。 |
+| A2 original-on-wire | unmasked | probe email 在 capture.log 中的字节计数 >= 1（已配置排除）。 |
+| A3 masked-traffic | restore、tool-file | capture.log 含有 >= 1 个非 probe 的 email 形 token —— 证明掩码路径确实生效，而非被绕过。 |
+| A4 restore | 全部 | probe email 出现在 out.txt 中（字节计数 >= 1）。 |
+| A5 no-residual | restore、tool-file | out.txt 中每个 email 形 token 都等于 probe email（使用 `--mcp` 时还允许已还原的 FIXED_EMAIL；使用 `--allow-wire-variants` 时还允许任何字节级出现在 capture.log 中的 token）—— 无残留掩码片段。 |
+| MCP1/MCP2 | `--mcp` | 从 `fake-mcp-server.py` 提取的 `FIXED_EMAIL`/`FIXED_TOKEN`：不出现在 capture.log 中（restore/tool-file）或必须出现（unmasked）。 |
+| MCP3 | `--mcp`，restore/tool-file | `FIXED_EMAIL` 已在 out.txt 中还原（字节计数 >= 1）。 |
+| T1 tool-file | tool-file | probe 文件恰好包含一次 probe email。 |
+
+最后一行为 `RESULT: PASS` / `RESULT: FAIL`，退出码相应为 0/1。
+
 ## 验证掩码 —— 一律用 grep，绝不靠肉眼
 
 所有验证必须通过 `grep -c` 在捕获日志中计数完成，绝不能靠眼睛看输出。
-掩码后的值是格式保持的，乍一看与原始值完全相同。
+掩码后的值是格式保持的，乍一看与原始值完全相同。对于由 agent 驱动的
+probe 运行，请使用 `verify-probe.py`（见上文）代替内联 grep —— agent
+自身会话中的插件会使其 shell 命令里的 probe 值变得不可靠。
 
 ```bash
 # 应为 0：原始密钥绝不能到达 provider/MCP 服务器。

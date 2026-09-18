@@ -72,11 +72,19 @@ Wire it into `opencode.jsonc`:
     "fake": {
       "type": "local",
       "command": ["python3", "/abs/path/scripts/e2e/fake-mcp-server.py"],
-      "enabled": true
+      "enabled": true,
+      // Optional: log every received tools/call's arguments to a file.
+      // Decisive evidence for MCP exclusion probes — the wire cannot show
+      // whether the server received masked or original args.
+      "environment": {"FAKE_MCP_LOG": "/abs/path/received.log"}
     }
   }
 }
 ```
+
+When `FAKE_MCP_LOG` is set, one line per `tools/call` is appended to that
+file: `<method> <tool-name> <compact-json-of-arguments>`. Logging failures
+are swallowed — logging never breaks the server. Unset: no logging.
 
 ### Smoke test
 
@@ -89,11 +97,48 @@ printf '%s\n' \
   | python3 scripts/e2e/fake-mcp-server.py
 ```
 
+## verify-probe.py — self-contained assertion driver
+
+Assertion driver for probe runs. The agent running E2E probes has the
+plugin-under-test loaded in its OWN session, so any probe value embedded in
+the agent's shell commands gets masked/restored unpredictably — inline
+`grep -c '<probe>' capture.log` results are unreliable. verify-probe.py
+therefore takes ZERO probe values as arguments: it derives the probe email
+from the run transcript and reads MCP fixture secrets from
+`fake-mcp-server.py`, computing all assertions in-process. Output is only
+PASS/FAIL lines and counts — extracted secret values are never printed.
+
+```bash
+python3 scripts/e2e/verify-probe.py <capture.log> <out.txt> [--mode=restore|unmasked|tool-file] [--mcp] [--probe-file <path>] [--allow-wire-variants]
+# defaults: mode restore, probe file ./tool-probe-output.txt (tool-file mode only)
+```
+
+| Flag | Effect |
+|------|--------|
+| `--allow-wire-variants` | Relaxes A5: residual email-shaped tokens in out.txt that byte-appear in capture.log are also allowed. Rationale: tool CALL args for MCP tools and tool RESULTS are stored in the transcript in MASKED form (`execute.before`/`execute.after`), so the on-disk transcript legitimately contains masked variants that also went over the wire. A half-restored fragment would not byte-match the full wire variant, so the relaxation stays strict against partial-restore corruption. |
+
+| Assertion | Modes | Meaning |
+|-----------|-------|---------|
+| A1 derive-probe | all | Exactly one probe email derivable from out.txt (single distinct email-shaped token, or an unambiguous `echo:` line). Tokens with dot-less domains (e.g. `x@explorer` agent-mention artifacts) are ignored. With `--mcp`, the fixture FIXED_EMAIL is excluded from candidates (the final `echo:` line echoes the fixture's email — it is the last email in the final request body); the real probe appears restored on tool-call lines, so lines containing `{"` (tool-call args) are then also used for disambiguation. |
+| A2 no-leak | restore, tool-file | Probe email byte-count in capture.log == 0. |
+| A2 original-on-wire | unmasked | Probe email byte-count in capture.log >= 1 (exclusion configured). |
+| A3 masked-traffic | restore, tool-file | capture.log contains >= 1 email-shaped token that is not the probe — proves the masking path was actually active, not bypassed. |
+| A4 restore | all | Probe email appears in out.txt (byte count >= 1). |
+| A5 no-residual | restore, tool-file | Every email-shaped token in out.txt equals the probe email (with `--mcp`, the restored FIXED_EMAIL is also allowed; with `--allow-wire-variants`, tokens byte-appearing in capture.log are also allowed) — no leftover masked fragments. |
+| MCP1/MCP2 | `--mcp` | `FIXED_EMAIL`/`FIXED_TOKEN` extracted from `fake-mcp-server.py`: absent from capture.log (restore/tool-file) or present (unmasked). |
+| MCP3 | `--mcp`, restore/tool-file | `FIXED_EMAIL` restored in out.txt (byte count >= 1). |
+| T1 tool-file | tool-file | Probe file contains the probe email exactly once. |
+
+The final line is `RESULT: PASS` / `RESULT: FAIL`; exit code 0/1
+accordingly.
+
 ## Verifying masking — always grep, never eyeball
 
 All verification MUST be done by counting matches in the capture log with
 `grep -c`, never by looking at output. Masked values are format-preserving
-and look identical to originals at a glance.
+and look identical to originals at a glance. For agent-driven probe runs,
+use `verify-probe.py` (see above) instead of inline grep — the agent's own
+plugin session makes probe values in its shell commands unreliable.
 
 ```bash
 # Should be 0: the original secret must never reach the provider/MCP server.
