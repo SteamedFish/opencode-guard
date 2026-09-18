@@ -200,6 +200,13 @@ export OPENCODE_GUARD_DEBUG=1
 opencode
 ```
 
+> **OpenCode v2**: plugin console output is invisible under v2. Use file logging instead:
+> ```bash
+> export OPENCODE_GUARD_DEBUG=1
+> export OPENCODE_GUARD_DEBUG_FILE=/tmp/opencode-guard-debug.log
+> ```
+> ⚠️ The debug file may contain masked→original mappings and other sensitive values — enable it only temporarily and delete the file after debugging.
+
 Common causes:
 - No config file found
 - `global_salt` not set

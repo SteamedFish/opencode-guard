@@ -1,4 +1,5 @@
 import { loadConfig } from './config.js';
+import { createLogger } from './logger.js';
 import { buildPatternSet } from './patterns.js';
 import { MaskSession } from './session.js';
 import { initializeCustomMaskers } from './maskers/index.js';
@@ -17,10 +18,11 @@ import { AIDetector } from './ai-detector/index.js';
 export async function createGuardCore(directory) {
   const config = await loadConfig(directory);
   const debug = Boolean(process.env.OPENCODE_GUARD_DEBUG) || config.debug;
+  const logger = createLogger({ debug, debugFile: config.debugFile });
 
   if (debug) {
     const from = config.loadedFrom ? config.loadedFrom : 'not found (plugin disabled)';
-    console.log(`[opencode-guard] config: ${from}, enabled=${config.enabled}`);
+    logger.log(`[opencode-guard] config: ${from}, enabled=${config.enabled}`);
   }
 
   if (!config.enabled || !config.globalSalt) {
@@ -41,9 +43,9 @@ export async function createGuardCore(directory) {
     });
 
     if (debug) {
-      console.log(`[opencode-guard] AI detection enabled (${config.detection.aiProvider})`);
+      logger.log(`[opencode-guard] AI detection enabled (${config.detection.aiProvider})`);
       if (config.detection.autoInstallDeps) {
-        console.log(`[opencode-guard] Auto-install enabled for AI dependencies`);
+        logger.log(`[opencode-guard] Auto-install enabled for AI dependencies`);
       }
     }
 
@@ -52,13 +54,13 @@ export async function createGuardCore(directory) {
       await aiDetector.initialize();
       aiDetectionReady = true;
       if (debug) {
-        console.log(`[opencode-guard] AI detector initialized successfully`);
+        logger.log(`[opencode-guard] AI detector initialized successfully`);
       }
     } catch (err) {
       if (debug) {
-        console.warn(`[opencode-guard] AI detector initialization failed: ${err.message}`);
+        logger.warn(`[opencode-guard] AI detector initialization failed: ${err.message}`);
         if (!config.detection.autoInstallDeps) {
-          console.log(`[opencode-guard] Tip: Set auto_install_deps: true to automatically install missing dependencies`);
+          logger.log(`[opencode-guard] Tip: Set auto_install_deps: true to automatically install missing dependencies`);
         }
       }
       // Don't throw - plugin should work without AI detection
@@ -106,6 +108,7 @@ export async function createGuardCore(directory) {
   return {
     config,
     debug,
+    logger,
     patterns,
     aiDetector,
     getSession,

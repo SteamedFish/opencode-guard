@@ -32,6 +32,7 @@ test('loadConfig returns disabled config when plugin is disabled', async () => {
     const config = await loadConfig('/nonexistent/path');
     assert.strictEqual(config.enabled, false);
     assert.strictEqual(config.debug, false);
+    assert.strictEqual(config.debugFile, '');
     assert.strictEqual(config.loadedFrom, tempConfig);
   } finally {
     if (originalEnv !== undefined) {
@@ -81,4 +82,82 @@ test('loadConfig parses all config fields', async () => {
   assert.strictEqual(mockConfig.detection.ai_detection, true);
   assert.strictEqual(mockConfig.exclude_llm_endpoints.length, 1);
   assert.strictEqual(mockConfig.custom_maskers.test.type, 'fixed_length');
+});
+
+test('loadConfig maps debug_file config key to debugFile', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalDebugFileEnv = process.env.OPENCODE_GUARD_DEBUG_FILE;
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}-debugfile.json`);
+  await writeFile(tempConfig, JSON.stringify({ enabled: true, debug: true, debug_file: '/tmp/guard-from-config.log' }));
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
+  delete process.env.OPENCODE_GUARD_DEBUG_FILE;
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.debugFile, '/tmp/guard-from-config.log');
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    if (originalDebugFileEnv !== undefined) {
+      process.env.OPENCODE_GUARD_DEBUG_FILE = originalDebugFileEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_DEBUG_FILE;
+    }
+    await unlink(tempConfig).catch(() => {});
+  }
+});
+
+test('loadConfig maps OPENCODE_GUARD_DEBUG_FILE env var to debugFile (env wins over config)', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalDebugFileEnv = process.env.OPENCODE_GUARD_DEBUG_FILE;
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}-debugfile-env.json`);
+  await writeFile(tempConfig, JSON.stringify({ enabled: true, debug_file: '/tmp/guard-from-config.log' }));
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
+  process.env.OPENCODE_GUARD_DEBUG_FILE = '/tmp/guard-from-env.log';
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.debugFile, '/tmp/guard-from-env.log');
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    if (originalDebugFileEnv !== undefined) {
+      process.env.OPENCODE_GUARD_DEBUG_FILE = originalDebugFileEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_DEBUG_FILE;
+    }
+    await unlink(tempConfig).catch(() => {});
+  }
+});
+
+test('loadConfig defaults debugFile to empty string', async () => {
+  const originalEnv = process.env.OPENCODE_GUARD_CONFIG;
+  const originalDebugFileEnv = process.env.OPENCODE_GUARD_DEBUG_FILE;
+  const tempConfig = join(tmpdir(), `opencode-guard-test-${Date.now()}-nodebugfile.json`);
+  await writeFile(tempConfig, JSON.stringify({ enabled: true }));
+  process.env.OPENCODE_GUARD_CONFIG = tempConfig;
+  delete process.env.OPENCODE_GUARD_DEBUG_FILE;
+
+  try {
+    const config = await loadConfig('/nonexistent/path');
+    assert.strictEqual(config.debugFile, '');
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.OPENCODE_GUARD_CONFIG = originalEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_CONFIG;
+    }
+    if (originalDebugFileEnv !== undefined) {
+      process.env.OPENCODE_GUARD_DEBUG_FILE = originalDebugFileEnv;
+    } else {
+      delete process.env.OPENCODE_GUARD_DEBUG_FILE;
+    }
+    await unlink(tempConfig).catch(() => {});
+  }
 });

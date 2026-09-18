@@ -73,6 +73,7 @@ EOF
 {
   "enabled": true,
   "debug": false,
+  "debug_file": "",
   "global_salt": "your-secret-salt-change-this",
   "session_ttl": "1h",
   "max_mappings": 100000,
@@ -125,6 +126,7 @@ EOF
 |-----|------|--------|
 | `enabled` | 启用/禁用插件。**注意：** 如果没有配置文件，插件将被禁用 | `true`（配置文件存在时） |
 | `debug` | 启用调试日志 | `false` |
+| `debug_file` | 将调试输出追加写入此文件（仅在 `debug` 开启时生效）。在 OpenCode v2 下控制台输出不可见时尤其有用。**警告：** 文件可能包含脱敏值→原始值的映射及其他敏感内容 — 请仅在临时调试时开启，调试结束后删除该文件 | `""`（关闭） |
 | `global_salt` | **必填。** 确定性脱敏的密钥盐值。没有此项插件无法工作 | （无 — 必须设置） |
 | `session_ttl` | 会话超时（如 "1h", "30m"） | `"1h"` |
 | `max_mappings` | 每会话最大缓存映射数 | `100000` |
@@ -147,6 +149,7 @@ EOF
 |------|------|
 | `OPENCODE_GUARD_CONFIG` | 配置文件的显式路径 |
 | `OPENCODE_GUARD_DEBUG` | 启用调试模式（设为 `1`） |
+| `OPENCODE_GUARD_DEBUG_FILE` | 调试日志文件路径（覆盖 `debug_file`；仅在调试开启时生效） |
 
 ---
 

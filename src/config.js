@@ -64,14 +64,15 @@ export async function loadConfig(projectRoot) {
   const found = await findConfigFile(projectRoot);
   
   if (!found) {
-    return { enabled: false, debug: false, loadedFrom: null };
+    return { enabled: false, debug: false, debugFile: '', loadedFrom: null };
   }
 
   const raw = found.content;
-  
+
   return {
     enabled: Boolean(raw.enabled),
     debug: Boolean(raw.debug),
+    debugFile: String(process.env.OPENCODE_GUARD_DEBUG_FILE || raw.debug_file || ''),
     loadedFrom: found.path,
     globalSalt: String(raw.global_salt || ''),
     ttlMs: parseDuration(raw.session_ttl || '1h'),

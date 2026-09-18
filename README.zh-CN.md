@@ -200,6 +200,13 @@ export OPENCODE_GUARD_DEBUG=1
 opencode
 ```
 
+> **OpenCode v2**：插件的 console 输出在 v2 下不可见。请改用文件日志：
+> ```bash
+> export OPENCODE_GUARD_DEBUG=1
+> export OPENCODE_GUARD_DEBUG_FILE=/tmp/opencode-guard-debug.log
+> ```
+> ⚠️ 调试文件可能包含脱敏值→原始值的映射及其他敏感内容 — 请仅在临时调试时开启，调试结束后删除该文件。
+
 常见原因：
 - 找不到配置文件
 - 未设置 `global_salt`

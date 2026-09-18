@@ -1,6 +1,7 @@
 {
   "enabled": true,
   "debug": false,
+  "debug_file": "",
   "global_salt": "your-secret-salt-here-change-this",
   "session_ttl": "1h",
   "max_mappings": 100000,

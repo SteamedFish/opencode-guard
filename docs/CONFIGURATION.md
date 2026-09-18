@@ -73,6 +73,7 @@ The plugin searches for config in this order (first found wins):
 {
   "enabled": true,
   "debug": false,
+  "debug_file": "",
   "global_salt": "your-secret-salt-change-this",
   "session_ttl": "1h",
   "max_mappings": 100000,
@@ -125,6 +126,7 @@ The plugin searches for config in this order (first found wins):
 |--------|-------------|---------|
 | `enabled` | Enable/disable the plugin. **Note:** Plugin is disabled if no config file exists | `true` (when config present) |
 | `debug` | Enable debug logging | `false` |
+| `debug_file` | Append debug output to this file (only used when `debug` is on). Useful under OpenCode v2 where console output is invisible. **Warning:** may contain masked→original mappings and other sensitive values — enable only temporarily and delete the file after debugging | `""` (off) |
 | `global_salt` | **Required.** Secret salt for deterministic masking. Plugin won't work without this | (none — must be set) |
 | `session_ttl` | Session timeout (e.g., "1h", "30m") | `"1h"` |
 | `max_mappings` | Maximum cached mappings per session | `100000` |
@@ -147,6 +149,7 @@ The plugin searches for config in this order (first found wins):
 |----------|-------------|
 | `OPENCODE_GUARD_CONFIG` | Explicit path to config file |
 | `OPENCODE_GUARD_DEBUG` | Enable debug mode (set to `1`) |
+| `OPENCODE_GUARD_DEBUG_FILE` | Debug log file path (overrides `debug_file`; only used when debug is on) |
 
 ---
 

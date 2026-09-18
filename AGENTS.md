@@ -20,6 +20,7 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 │   ├── patterns.js        # Built-in patterns (email, uuid, ipv4, etc.)
 │   ├── session.js         # MaskSession - deterministic masking storage
 │   ├── config.js          # Configuration loading from multiple sources
+│   ├── logger.js          # createLogger - debug console mirror + opt-in debug file (v2 console is invisible)
 │   ├── restore.js         # restoreText/restoreDeep - unmasking
 │   ├── utils.js           # createSeededRNG, hash utilities
 │   ├── streaming-unmasker.js  # Streaming response unmasking
@@ -36,6 +37,8 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 │       ├── generic.js     # Fallback pattern-based masking
 │       └── custom.js      # Custom masker registry
 ├── tests/                 # Mirror of src/ structure
+├── scripts/e2e/           # capture-server.py - fake provider for E2E masking tests
+├── .opencode/skills/guard-e2e-testing/  # Testing playbook skill for future sessions
 ├── docs/                  # Additional documentation
 ├── opencode-guard.config.json.example  # Configuration template
 ├── package.json           # ES module, Node >=18
@@ -134,6 +137,11 @@ The plugin has a dual-compat entry point (`export default { id, setup, server }`
   4. `ctx.session.hook('experimental.ws.handshake'|'experimental.ws.receive', ...)` - best-effort per-frame WS restore
   5. v2 baseURL exclusion resolved via `ctx.provider.get({ providerID })` → `data?.settings?.baseURL` (cached per providerID)
   6. v2 MCP server names via `ctx.mcp.list()` (cached 5s); sanitize = `s.replace(/[^a-zA-Z0-9_-]/g, '_')`
+
+### Debug Logging
+- Under OpenCode **v2**, plugin `console.log`/`console.warn` output is invisible (not in server log, `--print-logs`, or standalone serve stdout) — `debug_file` / `OPENCODE_GUARD_DEBUG_FILE` is the only way to observe the plugin.
+- The debug file persists masked→original mappings and other sensitive values — enable only temporarily and delete after debugging.
+- Logger appends are fire-and-forget with `.catch(() => {})` — a failing log file must never break the plugin.
 
 ### Session Management
 - Sessions keyed by `sessionID` from OpenCode context

@@ -36,7 +36,7 @@ export async function setupV2(ctx) {
     await ctx.session.hook('experimental.ws.receive', handlers.wsReceive);
   } catch (err) {
     if (core.debug) {
-      console.warn(`[opencode-guard] experimental ws hooks unavailable: ${err.message}`);
+      logger.warn(`[opencode-guard] experimental ws hooks unavailable: ${err.message}`);
     }
   }
 }
@@ -51,7 +51,7 @@ export async function setupV2(ctx) {
  * @param {() => Promise<any>} env.mcpList
  */
 export function createV2Handlers(core, env) {
-  const { config, debug, patterns, aiDetector, getSession, isExcludedEndpoint, isExcludedMcpServer, isExcludedMcpTool } = core;
+  const { config, debug, logger, patterns, aiDetector, getSession, isExcludedEndpoint, isExcludedMcpServer, isExcludedMcpTool } = core;
 
   // Cached baseURL per providerID (undefined = unknown / error)
   const baseUrlCache = new Map();
@@ -110,13 +110,13 @@ export function createV2Handlers(core, env) {
   const maskRequest = async (event) => {
     const session = getSession(event.sessionID);
     if (!session) {
-      if (debug) console.log(`[opencode-guard] v2 maskRequest: no session for ${event.sessionID}`);
+      if (debug) logger.log(`[opencode-guard] v2 maskRequest: no session for ${event.sessionID}`);
       return;
     }
 
     const baseURL = await resolveBaseUrl(event.model?.providerID);
     if (isExcludedEndpoint(baseURL)) {
-      if (debug) console.log(`[opencode-guard] v2 maskRequest: skipping excluded endpoint: ${baseURL}`);
+      if (debug) logger.log(`[opencode-guard] v2 maskRequest: skipping excluded endpoint: ${baseURL}`);
       return;
     }
 
@@ -164,7 +164,7 @@ export function createV2Handlers(core, env) {
     }
 
     if (debug && changedCount > 0) {
-      console.log(`[opencode-guard] v2 maskRequest: masked ${changedCount} sensitive values`);
+      logger.log(`[opencode-guard] v2 maskRequest: masked ${changedCount} sensitive values`);
     }
   };
 
@@ -172,7 +172,7 @@ export function createV2Handlers(core, env) {
   const toolBefore = async (event) => {
     const session = getSession(event.sessionID);
     if (!session) {
-      if (debug) console.log(`[opencode-guard] v2 toolBefore: no session for ${event.sessionID}`);
+      if (debug) logger.log(`[opencode-guard] v2 toolBefore: no session for ${event.sessionID}`);
       return;
     }
 
@@ -182,9 +182,9 @@ export function createV2Handlers(core, env) {
 
     if (!server) {
       // Built-in tool - executes locally, needs originals
-      if (debug) console.log(`[opencode-guard] v2 toolBefore: restoring args for built-in tool ${event.tool}`, JSON.stringify(event.input));
+      if (debug) logger.log(`[opencode-guard] v2 toolBefore: restoring args for built-in tool ${event.tool}`, JSON.stringify(event.input));
       restoreDeep(event.input, session, new WeakSet(), debug);
-      if (debug) console.log(`[opencode-guard] v2 toolBefore: restored args`, JSON.stringify(event.input));
+      if (debug) logger.log(`[opencode-guard] v2 toolBefore: restored args`, JSON.stringify(event.input));
       return;
     }
 
@@ -193,14 +193,14 @@ export function createV2Handlers(core, env) {
     if (isExcludedMcpServer(server) || isExcludedMcpTool(short) || isExcludedMcpTool(event.tool)) {
       // Local/trusted MCP - restore originals for local execution
       const reason = isExcludedMcpServer(server) ? `server ${server}` : `tool ${short}`;
-      if (debug) console.log(`[opencode-guard] v2 toolBefore: restoring args for local ${reason}`, JSON.stringify(event.input));
+      if (debug) logger.log(`[opencode-guard] v2 toolBefore: restoring args for local ${reason}`, JSON.stringify(event.input));
       restoreDeep(event.input, session, new WeakSet(), debug);
-      if (debug) console.log(`[opencode-guard] v2 toolBefore: restored args`, JSON.stringify(event.input));
+      if (debug) logger.log(`[opencode-guard] v2 toolBefore: restored args`, JSON.stringify(event.input));
     } else {
       // External MCP - mask args
-      if (debug) console.log(`[opencode-guard] v2 toolBefore: masking args for external server ${server}`, JSON.stringify(event.input));
+      if (debug) logger.log(`[opencode-guard] v2 toolBefore: masking args for external server ${server}`, JSON.stringify(event.input));
       await redactDeep(event.input, patterns, session, aiDetector);
-      if (debug) console.log(`[opencode-guard] v2 toolBefore: masked args`, JSON.stringify(event.input));
+      if (debug) logger.log(`[opencode-guard] v2 toolBefore: masked args`, JSON.stringify(event.input));
     }
   };
 
@@ -208,20 +208,20 @@ export function createV2Handlers(core, env) {
   const toolAfter = async (event) => {
     const session = getSession(event.sessionID);
     if (!session) {
-      if (debug) console.log(`[opencode-guard] v2 toolAfter: no session for ${event.sessionID}`);
+      if (debug) logger.log(`[opencode-guard] v2 toolAfter: no session for ${event.sessionID}`);
       return;
     }
 
     if (event.status === 'completed' && event.result) {
-      if (debug) console.log(`[opencode-guard] v2 toolAfter: masking result`);
+      if (debug) logger.log(`[opencode-guard] v2 toolAfter: masking result`);
       await redactDeep(event.result, patterns, session, aiDetector);
-      if (debug) console.log(`[opencode-guard] v2 toolAfter: masked result`);
+      if (debug) logger.log(`[opencode-guard] v2 toolAfter: masked result`);
     }
 
     if (event.status === 'error' && event.error) {
-      if (debug) console.log(`[opencode-guard] v2 toolAfter: masking error`);
+      if (debug) logger.log(`[opencode-guard] v2 toolAfter: masking error`);
       await redactDeep(event.error, patterns, session, aiDetector);
-      if (debug) console.log(`[opencode-guard] v2 toolAfter: masked error`);
+      if (debug) logger.log(`[opencode-guard] v2 toolAfter: masked error`);
     }
   };
 
@@ -232,7 +232,7 @@ export function createV2Handlers(core, env) {
 
     const wrapped = wrapResponse(event.response, session);
     if (wrapped) {
-      if (debug) console.log(`[opencode-guard] v2 httpResponse: wrapped response stream for restoration`);
+      if (debug) logger.log(`[opencode-guard] v2 httpResponse: wrapped response stream for restoration`);
       event.response = wrapped;
     }
   };
