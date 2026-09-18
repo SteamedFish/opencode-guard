@@ -26,3 +26,14 @@ coverage/
 .DS_Store
 Thumbs.db
 .worktrees/
+
+# BEGIN oh-my-opencode-slim worktrees
+.slim/worktrees/
+.slim/worktrees.json
+# END oh-my-opencode-slim worktrees
+
+# Temporary/scratch work (sandbox, handoffs, caches)
+.tmp/
+
+# Deepwork progress state (git-local)
+.slim/deepwork/
