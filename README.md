@@ -171,7 +171,7 @@ See [Pattern Guide](docs/PATTERNS.md) for custom patterns.
 For detecting sensitive data that regex might miss:
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 ```json

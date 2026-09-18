@@ -171,7 +171,7 @@ flowchart LR
 用于检测正则可能遗漏的敏感数据：
 
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 ```json

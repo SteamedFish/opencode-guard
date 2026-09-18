@@ -135,10 +135,11 @@ The plugin has a dual-compat entry point (`export default { id, setup, server }`
 - **v2** calls `setup(ctx)` (in `src/v2.js`) and registers hooks via domain methods:
   1. `ctx.session.hook('context'|'compaction'|'generate'|'title', maskRequest)` - mask outgoing (per request; persisted history keeps originals)
   2. `ctx.tool.hook('execute.before'|'execute.after', ...)` - built-in + MCP tools (MCP tools are named `<server>_<tool>`)
-  3. `ctx.session.hook('http.response', ...)` - wraps the provider Response stream for restoration (JSON-safe originals only)
+  3. `ctx.session.hook('http.response', ...)` - wraps the provider Response stream for restoration (JSON-safe originals only). SSE-aware restore is gated on OpenAI `chat.completion.chunk` shape (`choices[].delta.content` / `reasoning_content` / streamed `tool_calls[].function.arguments`); other SSE shapes (e.g. Anthropic-native `content_block_delta`/`text_delta`/`input_json_delta`) pass through byte-identical WITHOUT restore — fail-safe (no leak) but masked values stay masked for those providers.
   4. `ctx.session.hook('experimental.ws.handshake'|'experimental.ws.receive', ...)` - best-effort per-frame WS restore
   5. v2 baseURL exclusion resolved via `ctx.provider.get({ providerID })` → `data?.settings?.baseURL` (cached per providerID)
   6. v2 MCP server names via `ctx.mcp.list()` (cached 5s); sanitize = `s.replace(/[^a-zA-Z0-9_-]/g, '_')`
+  7. v2 (>=2.0.6) MCP tools default to `codemode: true` — they are nested inside the `execute` Code Mode tool and are NOT sent in the provider request's `tools` array (they appear in the system-prompt catalog as `tools.<server>.<tool>`). Direct exposure needs native config format `mcp.servers.<name>.codemode: false`; the legacy `"mcp": {"<name>": {...}}` format silently strips `codemode` (strict decode + excess-key ignore). Wire/tool-hook name is `<server>_<tool>` sanitized (e.g. `fake_lookup_secret`); the dotted form is only the Code Mode catalog path. Also: opencode sends the round-1 request BEFORE MCP finishes connecting — MCP tools only appear in the tools array from round 2 onward.
 
 ### Debug Logging
 - Under OpenCode **v2**, plugin `console.log`/`console.warn` output is invisible (not in server log, `--print-logs`, or standalone serve stdout) — `debug_file` / `OPENCODE_GUARD_DEBUG_FILE` is the only way to observe the plugin.

@@ -220,7 +220,9 @@ test('v2 http.response restores masked email in SSE stream', async () => {
       messages: [{ role: 'user', content: [{ type: 'text', text: 'user@example.com' }] }],
     });
     const masked = await maskedFor(tempDir, BASE_CONFIG, 'sess-1', 'user@example.com');
-    const payload = `data: {"delta":"reply to ${masked}"}\n\n`;
+    // SSE events are only content-level-restored when they parse as
+    // chat.completion.chunk objects; non-chunk JSON passes through verbatim.
+    const payload = `data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"reply to ${masked}"},"finish_reason":null}]}\n\ndata: [DONE]\n\n`;
 
     const response = new Response(
       new ReadableStream({
@@ -259,7 +261,7 @@ test('v2 http.response does not restore JSON-unsafe originals but restores JSON-
     session.maskedToOriginal.set('sk-Ab12Cd34Ef', 'pass"word\n123');
     session.timestamps.set('sk-Ab12Cd34Ef', Date.now());
 
-    const payload = `data: {"a":"${safeMasked.text}","b":"sk-Ab12Cd34Ef"}\n\n`;
+    const payload = `data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"${safeMasked.text} and sk-Ab12Cd34Ef"},"finish_reason":null}]}\n\ndata: [DONE]\n\n`;
     const response = new Response(
       new ReadableStream({
         start(c) {

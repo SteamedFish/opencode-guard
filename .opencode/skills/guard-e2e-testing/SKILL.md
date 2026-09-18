@@ -85,3 +85,81 @@ masked token the plugin just registered — so the displayed `echo:` line proves
 7. For a functional probe, **do not** rely on what the model prints: both the
    masked and unmasked paths can produce the same visible text. Wire-level capture
    (or `grep -c` on its log) is the only trustworthy evidence.
+
+## Pitfalls — round 2 (all hit in practice, 2026-09-19)
+
+8. **`grep -o`/`-oE` output is NOT trustworthy** when your own session's plugin is
+   loaded: extracted email/token-shaped values in the OUTPUT get masked by
+   `tool.execute.after` before you see them (observed: extraction output rendered
+   as empty). Only `grep -c` counts (and `cat -A`/`tail` for STRUCTURE, never for
+   value comparison) are reliable. Consequence of pitfall 1, easy to forget.
+9. **Plugin id dedup: the global plugin shadows the sandbox one.** When both
+   `~/.config/opencode/plugins/opencode-guard` and the sandbox opencode.jsonc
+   `plugins: ["file:///...worktree/src"]` are present, they share the plugin id
+   and only ONE loads — the global one. Your sandbox then silently runs the MAIN
+   checkout's code, not the worktree's. During worktree E2E, repoint the global
+   symlink at the worktree src (`ln -sfn .../worktree/src ~/.config/opencode/plugins/opencode-guard`)
+   and **restore it to the main src when done**. First symptom of shadowing: code
+   changes "have no effect" in probes. (v2 hot-unload IS supported: the plugin
+   supervisor reconciles the desired set on fs/config events, so symlink swaps
+   and `"-opencode-guard"` negation entries in the `plugins` array unload hooks
+   for existing+new sessions without a restart. Caveat: teardown is a positional
+   prefix diff — later-loaded plugins get re-created too. v1 loader has NO
+   watcher/unload.)
+10. **`debug_file` only writes when `debug: true` is also set**
+    (`fileEnabled = debug && debugFile`). A config with `debug_file` but no
+    `debug` produces no file at all — absence of the file is not proof the
+    plugin didn't load.
+11. **Capture-server restart procedure** (two real failures): `$!` from
+    `nohup ... &` may not be the python PID; `pgrep -f "capture-serve[r]"`
+    also matches your own `bash -c` wrapper. Correct procedure:
+    `pgrep -af "capture-serve[r]" | grep python3` → `kill -9 <pid>` → confirm the
+    port is free (`ss -tlnp | grep <port>` shows nothing) → start → confirm the
+    new process args show the intended `--mode` before probing. A stale server
+    answering in the wrong mode silently invalidates probe results.
+12. **v2 byte-level restore cannot see values split across SSE events** (fixed
+    by SSE-aware restore; if you ever revert it): two `delta.content` strings
+    have JSON/SSE framing between them, so a key split across events is never
+    contiguous in raw bytes. When testing restore, always include a probe where
+    the masked value is split across two SSE events (capture-server `--mode=echo-split`).
+
+## Pitfalls — round 3 (all hit in practice, 2026-09-19)
+
+13. **opencode v2's `write` tool schema uses `path`, not `filePath`**
+    ("Update the arguments and call the tool again" + `path: Missing key`).
+    Fixture tool-call args must match the RUNTIME's schema exactly — dump the
+    request's tools array from capture.log and read the parameter names. A
+    relative `path` works fine (resolves against the opencode project cwd).
+14. **Tool names and schemas vary by distribution/agent**: OMO slim names the
+    shell tool `shell` (not `bash`), and opencode tool schemas use
+    `additionalProperties: false` — an extra arg field (e.g. `description`)
+    fails validation with the same generic "Update the arguments" error.
+    Always dump the request's actual tools array from capture.log before
+    assuming names/schemas; use capture-server `--prefer-tool=NAME`.
+15. **opencode server restarts kill nohup'd background processes** (they die
+    with the server's process tree). Start the capture server fully detached:
+    `setsid nohup python3 ... < /dev/null > log 2>&1 & disown`.
+16. **`\w` in this environment's `grep -E` does not work** (GNU-extension
+    assumption fails; count came back 0 for a matching line). Use POSIX
+    classes: `grep -cE '[[:alnum:]._%+-]+@[[:alnum:].-]+'`. (Python `re` `\w`
+    is fine — capture-server's EMAIL_RE is unaffected.)
+17. **v2 MCP tools are invisible to a capture server by default** (codemode):
+    v2.0.6 registers MCP tools with `codemode: true`, nesting them into the
+    `execute` Code Mode tool — they never appear in the provider request's
+    `tools` array (the system-prompt catalog line `tools.fake.lookup_secret`
+    is NOT the wire name). For MCP E2E you MUST use the native config form
+    `mcp.servers.<name>.codemode: false` — the legacy `"mcp": {"<name>": ...}`
+    form silently strips `codemode`. Wire/hook name is `<server>_<tool>`
+    sanitized. Also: opencode races MCP connect vs round 1 — the MCP tool is
+    absent from the round-1 tools array and appears from round 2 onward, so
+    the capture server needs prefer-tool deferral (`--prefer-tool` calls the
+    tool on the first round where it appears, forcing rounds with a benign
+    call meanwhile).
+18. **Inline probe commands carrying probe values are UNRELIABLE end-to-end**
+    (supersedes the "grep -c is always safe" assumption of pitfall 8): the
+    probing agent's own plugin session masks/restores email-shaped values in
+    shell commands AND tool results, and observed grep counts contradicted
+    byte-level file content (grep reported 1 for an original that python
+    byte-count proved absent). All probe assertions must run in a
+    self-contained driver (`scripts/e2e/verify-probe.py`) that derives probe
+    values FROM files on disk and prints only PASS/FAIL + counts.

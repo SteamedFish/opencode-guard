@@ -21,9 +21,9 @@
     "parallel": true,
     "ai_detection": false,
     "ai_provider": "local",
-    "ai_timeout_ms": 500,
+    "ai_timeout_ms": 2000,
     "auto_install_deps": false,
-    "local_model": "SoelMgd/bert-pii-detection"
+    "local_model": "onnx-community/piiranha-v1-detect-personal-information-ONNX"
   },
   "exclude_llm_endpoints": [],
   "exclude_mcp_servers": [],

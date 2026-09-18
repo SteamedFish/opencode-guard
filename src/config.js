@@ -167,7 +167,7 @@ export async function loadConfig(projectRoot) {
       masking: { formatPreserving: true, preserveDomains: true, preservePrefixes: true },
       detection: {
         parallel: true, aiDetection: false, aiProvider: 'local',
-        aiTimeoutMs: 500, autoInstallDeps: false, localModel: '',
+        aiTimeoutMs: 2000, autoInstallDeps: false, localModel: '',
       },
       excludeLlmEndpoints: [],
       excludeMcpServers: [],
@@ -213,7 +213,7 @@ export async function loadConfig(projectRoot) {
       parallel: Boolean(raw.detection?.parallel ?? true),
       aiDetection: Boolean(raw.detection?.ai_detection ?? false),
       aiProvider: String(raw.detection?.ai_provider || 'local'),
-      aiTimeoutMs: Number(raw.detection?.ai_timeout_ms || 500),
+      aiTimeoutMs: Number(raw.detection?.ai_timeout_ms || 2000),
       autoInstallDeps: Boolean(raw.detection?.auto_install_deps ?? false),
       localModel: String(raw.detection?.local_model || ''),
     },

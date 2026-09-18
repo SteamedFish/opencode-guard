@@ -106,6 +106,6 @@ export function getModelCacheInfo() {
   return {
     directory: DEFAULT_MODEL_CACHE_DIR,
     envVar: 'HF_HOME',
-    note: 'Models are downloaded automatically on first use by @xenova/transformers'
+    note: 'Models are downloaded automatically on first use by @huggingface/transformers'
   };
 }
