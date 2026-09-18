@@ -26,9 +26,32 @@ test('redactText masks sensitive data in text', async () => {
   assert.ok(result.text.includes('@example.com'));
 });
 
-test('redactText returns original text when no matches', async () => {
+test('redactText never re-masks an existing masked value (no M2→M1 chains)', async () => {
   const session = createTestSession();
-  const text = 'No sensitive data here';
+  const patterns = {
+    regex: [
+      { regex: /\S+@\S+\.\S+/g, category: 'EMAIL', maskAs: 'email' },
+    ],
+    keywords: [],
+    exclude: new Set(),
+  };
+
+  const first = await redactText('My email is john@example.com', patterns, session);
+  assert.strictEqual(first.count, 1);
+  const maskedEmail = first.text.match(/\S+@\S+\.\S+/)[0];
+  assert.ok(session.maskedToOriginal.has(maskedEmail));
+
+  // Re-scanning already-masked history (as maskRequest does every request)
+  // must leave masked values untouched instead of masking them again.
+  const second = await redactText(first.text, patterns, session);
+  assert.strictEqual(second.text, first.text);
+  assert.strictEqual(second.count, 0);
+  assert.strictEqual(session.maskedToOriginal.size, 1);
+  assert.strictEqual(session.lookupOriginal(maskedEmail), 'john@example.com');
+});
+
+test('redactText returns original text when no matches', async () => {
+  const session = createTestSession();  const text = 'No sensitive data here';
   const patterns = {
     regex: [
       { regex: /\d{3}-\d{2}-\d{4}/g, category: 'SSN', maskAs: 'pattern' },

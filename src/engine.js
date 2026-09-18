@@ -15,6 +15,14 @@ export async function redactText(text, patterns, session, aiDetector = null) {
   
   for (let i = matches.length - 1; i >= 0; i--) {
     const match = matches[i];
+    // Chain guard: never re-mask a value that is already a masked key of this
+    // session. Masked values still match the builtin patterns (a masked email
+    // still looks like an email), so without this guard re-scanned history
+    // would build M2→M1 chains whose restoration is fragile (single-pass
+    // stream restore only undoes one layer; eviction/TTL can break the chain).
+    if (session.maskedToOriginal.has(match.text)) {
+      continue;
+    }
     const masked = session.getOrCreateMasked(match.text, match.category, match.maskAs);
     // Tripwire: a masker that returns its input unchanged silently leaks the
     // sensitive value (e.g. a parse regex whose flags don't match the
