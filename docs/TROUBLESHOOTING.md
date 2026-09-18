@@ -181,10 +181,9 @@ For operations that must use real data, use OpenCode's built-in tools instead of
 
 ### "Architecture not supported" Error
 
-The model uses an architecture not supported by `@xenova/transformers`:
-
-- ❌ ModernBERT (e.g., `joneauxedgar/pasteproof-pii-detector-v2`)
-- ❌ GPT-style models for token classification
+The model uses an architecture not supported by `@huggingface/transformers`, or the
+model repo does not ship ONNX weights (an `onnx/` directory) — safetensors-only
+repos cannot load in Transformers.js.
 
 **Solution**: Use models from the [recommended list](AI_DETECTION.md#recommended-local-models).
 
@@ -203,9 +202,8 @@ The local provider loads ML models into memory:
 
 | Environment | Recommended Model | Size |
 |-------------|-------------------|------|
-| Low memory | `gravitee-io/bert-small-pii-detection` | ~30MB |
-| Balanced | `SoelMgd/bert-pii-detection` | ~66MB |
-| High accuracy | `iiiorg/piiranha-v1-detect-personal-information` | ~400MB |
+| Balanced (default) | `onnx-community/piiranha-v1-detect-personal-information-ONNX` | ~300MB |
+| Other models | Must ship ONNX weights (`onnx/` directory) to load | varies |
 
 **Alternative**: Use OpenAI provider (no local memory overhead)
 

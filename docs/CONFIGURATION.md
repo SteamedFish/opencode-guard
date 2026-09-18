@@ -90,7 +90,7 @@ The plugin searches for config in this order (first found wins):
     "parallel": true,
     "ai_detection": false,
     "ai_provider": "local",
-    "ai_timeout_ms": 500
+    "ai_timeout_ms": 2000
   },
   "exclude_llm_endpoints": [
     "http://localhost:11434"
@@ -140,7 +140,7 @@ The plugin searches for config in this order (first found wins):
 | `detection.parallel` | Run regex and AI detection in parallel | `true` |
 | `detection.ai_detection` | Enable AI-based detection. **This is the only feature disabled by default** — everything else works out of the box | `false` |
 | `detection.ai_provider` | AI provider: "local", "openai", or "custom" | `"local"` |
-| `detection.ai_timeout_ms` | Timeout for AI detection in milliseconds | `500` |
+| `detection.ai_timeout_ms` | Timeout for AI detection in milliseconds | `2000` |
 | `exclude_llm_endpoints` | LLM endpoints to skip masking. Hostname or `host:port` entries (scheme optional). A domain entry matches the exact host and its subdomains (e.g. `api.example.com` covers `v2.api.example.com`), but never unrelated suffixes (e.g. `api.example.com.evil.tld` is NOT excluded). Empty entries are rejected with a warning | `[]` |
 | `exclude_mcp_servers` | MCP servers to treat as "local" | `[]` |
 | `exclude_mcp_tools` | MCP tools to treat as "local". **Server-scoped:** bare tool names apply only to servers listed in `exclude_mcp_servers` (they never match external servers). Use a qualified entry `server/tool` (or the effective `server_tool` name) to exempt a specific tool on a specific server | Built-in tools |

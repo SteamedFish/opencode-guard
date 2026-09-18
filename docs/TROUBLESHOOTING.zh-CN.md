@@ -181,12 +181,10 @@ git MCP 服务器不在 `exclude_mcp_servers` 列表中，因此它接收到的�
 
 ### "Architecture not supported" 错误
 
-模型使用 `@xenova/transformers` 不支持的架构：
+模型使用了 `@huggingface/transformers` 不支持的架构，或者模型仓库未附带 ONNX
+权重（`onnx/` 目录）— 仅含 safetensors 的仓库无法在 Transformers.js 中加载。
 
-- ❌ ModernBERT（如 `joneauxedgar/pasteproof-pii-detector-v2`）
-- ❌ 用于令牌分类的 GPT 风格模型
-
-**解决方案**：使用[推荐列表](AI_DETECTION.md#recommended-local-models)中的模型。
+**解决方案**：使用[推荐列表](AI_DETECTION.zh-CN.md)中的模型。
 
 ---
 
@@ -203,9 +201,8 @@ git MCP 服务器不在 `exclude_mcp_servers` 列表中，因此它接收到的�
 
 | 环境 | 推荐模型 | 大小 |
 |------|---------|------|
-| 低内存 | `gravitee-io/bert-small-pii-detection` | ~30MB |
-| 平衡 | `SoelMgd/bert-pii-detection` | ~66MB |
-| 高精度 | `iiiorg/piiranha-v1-detect-personal-information` | ~400MB |
+| 均衡（默认） | `onnx-community/piiranha-v1-detect-personal-information-ONNX` | ~300MB |
+| 其他模型 | 必须附带 ONNX 权重（`onnx/` 目录）才能加载 | 不定 |
 
 **替代方案**：使用 OpenAI 提供商（无本地内存开销）
 

@@ -18,16 +18,16 @@ Three AI provider options are available:
 
 ### 1. Local (Default) - Transformers.js
 
-Uses `@xenova/transformers` for on-device inference. No data leaves your machine.
+Uses `@huggingface/transformers` (v3+) for on-device inference. No data leaves your machine.
 
 **Pros:**
 - 100% private - no API calls
 - No network latency
-- Works offline
+- Works offline (after first model download)
 - Free
 
 **Cons:**
-- Requires model download (~100MB on first run)
+- Requires model download (~300MB on first run)
 - Slower than cloud APIs
 - Lower accuracy than GPT-4
 
@@ -35,7 +35,7 @@ Uses `@xenova/transformers` for on-device inference. No data leaves your machine
 
 Option 1 - Manual installation:
 ```bash
-npm install @xenova/transformers
+npm install @huggingface/transformers
 ```
 
 Option 2 - Auto-installation (automatically installs package on first use):
@@ -45,7 +45,7 @@ Option 2 - Auto-installation (automatically installs package on first use):
     "ai_detection": true,
     "ai_provider": "local",
     "auto_install_deps": true,
-    "ai_timeout_ms": 500
+    "ai_timeout_ms": 2000
   }
 }
 ```
@@ -56,9 +56,9 @@ Option 2 - Auto-installation (automatically installs package on first use):
   "detection": {
     "ai_detection": true,
     "ai_provider": "local",
-    "local_model": "SoelMgd/bert-pii-detection",
+    "local_model": "onnx-community/piiranha-v1-detect-personal-information-ONNX",
     "auto_install_deps": false,
-    "ai_timeout_ms": 500
+    "ai_timeout_ms": 2000
   }
 }
 ```
@@ -66,66 +66,33 @@ Option 2 - Auto-installation (automatically installs package on first use):
 **Model Downloads:**
 
 The first time you use a local model, it will be automatically downloaded and cached:
-- **Location**: `~/.cache/huggingface/hub/` (can be changed via `HF_HOME` environment variable)
-- **Size**: ~100MB per model
+- **Location**: `.cache/` inside the installed `@huggingface/transformers` package directory (Transformers.js v3+ default)
+- **Size**: ~300MB for the default quantized model
 - **Offline use**: Once downloaded, models work offline
 - **Cleanup**: Delete the cache directory to remove models
+- **Mirror**: If huggingface.co is unreachable, set the standard `HF_ENDPOINT` environment variable (e.g. `https://hf-mirror.com`) before starting OpenCode; the plugin forwards it to Transformers.js
 
 #### Recommended Local Models
 
-The local provider uses token classification models. **Important: You need PII-specific models, not general NER models.**
+The local provider uses token classification models. **Important requirements:**
 
-**What's the difference?**
-- **PII Models**: Detect passwords, API keys, credit cards, SSNs, emails, secrets
-- **NER Models**: Only detect names, organizations, locations (PER, ORG, LOC, MISC)
+1. **PII-specific models, not general NER models.**
+   - **PII Models**: Detect passwords, API keys, credit cards, SSNs, emails, secrets
+   - **NER Models**: Only detect names, organizations, locations (PER, ORG, LOC, MISC)
+2. **The model repository must ship ONNX weights** (an `onnx/` directory). Repositories that only contain `model.safetensors` **cannot load** in Transformers.js. (This is why the former default `SoelMgd/bert-pii-detection` never worked.)
 
-**Why smaller models work better:**
-- Large language models (7B+ parameters) may "overthink" and try to interpret content instead of just identifying patterns
-- They might generate explanatory text or "help" in unexpected ways
-- Smaller, task-specific models are trained for exactly one job: detecting sensitive data
+**Recommended:**
 
-**Recommended PII Detection Models (All Compatible with Transformers.js):**
+| Model | Size | Architecture | Notes |
+|-------|------|--------------|-------|
+| `onnx-community/piiranha-v1-detect-personal-information-ONNX` | ~300MB (quantized ONNX) | DeBERTa-v2 | **Default**. Official ONNX conversion of Piiranha; 17 PII categories (email, password, username, names, address, phone, SSN, credit card, DOB, ...) |
 
-| Model | Size | Architecture | Best For | Password/Secret Detection | Notes |
-|-------|------|--------------|----------|---------------------------|-------|
-| `SoelMgd/bert-pii-detection` | ~66MB | DistilBERT | **General PII** | ✅ Yes | **Recommended default**. 56 PII categories, AI4Privacy dataset |
-| `gneeraj/deeppass2-bert` | ~560MB | XLM-RoBERTa | **Passwords, secrets, API keys** | ✅ Yes | Specifically trained for secret detection in code |
-| `iiiorg/piiranha-v1-detect-personal-information` | ~400MB | DeBERTa-v3 | **PII-heavy content** | ✅ Yes (98% precision on passwords) | 17 PII types, 99.44% accuracy |
-| `gravitee-io/bert-small-pii-detection` | ~30MB | BERT-small | **General PII** | ✅ Yes | Lightweight option for resource-constrained environments |
+Other ONNX-converted PII models published under [`onnx-community`](https://hf.co/onnx-community?search=pii) (e.g. `bert-small-pii-detection-ONNX`, `multilang-pii-ner-ONNX`, OpenMed clinical PII variants) can be used via `local_model`; verify the repo has an `onnx/` folder first.
 
-**Model Details:**
-
-**SoelMgd/bert-pii-detection** (Recommended Default)
-- **Architecture**: DistilBERT (fully compatible with transformers.js)
-- **Size**: ~66MB download
-- **Training**: AI4Privacy PII-42k dataset
-- **Categories**: 56 PII types including:
-  - Credentials: PASSWORD, USERNAME, API_KEY, SECRET_KEY
-  - Financial: CREDIT_CARD, BANK_ACCOUNT, SWIFT_BIC
-  - Personal: EMAIL, PHONE_NUMBER, SSN, DATE_OF_BIRTH
-  - Location: ADDRESS, CITY, ZIP_CODE, COUNTRY
-  - Online: IP_ADDRESS, MAC_ADDRESS, URL
-
-**gneeraj/deeppass2-bert**
-- **Architecture**: XLM-RoBERTa (compatible with transformers.js)
-- **Size**: ~560MB download
-- **Training**: Focused on secret detection in code
-- **Best For**: Detecting hardcoded passwords, API keys, tokens in source code
-- **Blog**: [SpecterOps DeepPass2 announcement](https://specterops.io/blog/2025/07/31/whats-your-secret-secret-scanning-by-deeppass2/)
-
-**iiiorg/piiranha-v1-detect-personal-information**
-- **Architecture**: DeBERTa-v3 (supported by transformers.js)
-- **Size**: ~400MB download
-- **Training**: AI4Privacy PII-200k dataset
-- **Categories**: 17 PII types across 6 languages
-- **Accuracy**: 99.44% overall, 100% email accuracy, 98% password precision
-- **Note**: Previously thought incompatible, but DeBERTa IS supported by @xenova/transformers
-
-**gravitee-io/bert-small-pii-detection**
-- **Architecture**: BERT-small (compatible with transformers.js)
-- **Size**: ~30MB download
-- **Training**: Combined multiple PII datasets
-- **Best For**: Resource-constrained environments where speed matters
+**Observed detection reliability (default model, quantized):**
+- Reliable: street addresses, cities, building numbers, ZIP codes
+- Inconsistent: emails, phone numbers, SSNs, passwords in free-form sentences (may be missed or returned as partial token fragments, which the plugin drops rather than risking wrong offsets)
+- Regex detection remains the primary layer; AI detection is a complement
 
 **⚠️ Models to AVOID:**
 
@@ -133,7 +100,7 @@ The local provider uses token classification models. **Important: You need PII-s
 |-------|-----------|
 | `Xenova/bert-base-NER` | **NER model only** - detects PER, ORG, LOC, MISC. Does NOT detect passwords or API keys |
 | `dslim/bert-base-NER` | Same limitation - NER only |
-| `joneauxedgar/pasteproof-pii-detector-v2` | Uses ModernBERT architecture - **NOT supported** by @xenova/transformers |
+| Any repo without an `onnx/` directory (e.g. `SoelMgd/bert-pii-detection`, `iiiorg/piiranha-v1-detect-personal-information`) | Cannot load in Transformers.js |
 | Large conversational models (Llama, Mistral, etc.) | Unsuitable for token classification tasks |
 | Code generation models | Trained for different tasks entirely |
 
@@ -143,13 +110,17 @@ Check the model's label list:
 - **PII labels**: PASSWORD, API_KEY, CREDIT_CARD, SSN, EMAIL, SECRET
 - **NER labels**: PER, ORG, LOC, MISC (names, organizations, locations)
 
-Example with SoelMgd/bert-pii-detection:
+Example with the default model:
 ```javascript
-const { pipeline } = require('@xenova/transformers');
+import { pipeline } from '@huggingface/transformers';
 
-const detector = await pipeline('token-classification', 'SoelMgd/bert-pii-detection');
-const result = await detector('My password is SuperSecret123!');
-// Detects: "SuperSecret123!" as PASSWORD
+const detector = await pipeline(
+  'token-classification',
+  'onnx-community/piiranha-v1-detect-personal-information-ONNX',
+  { dtype: 'q8' } // quantized weights; replaces v2's `quantized: true`
+);
+const result = await detector('I live at 742 Evergreen Terrace, Springfield', { aggregation_strategy: 'simple' });
+// Detects: "742" (I-BUILDINGNUM), "Evergreen Terrace" (I-STREET), "Springfield" (I-CITY)
 ```
 
 **Custom model configuration:**
@@ -158,8 +129,8 @@ const result = await detector('My password is SuperSecret123!');
   "detection": {
     "ai_detection": true,
     "ai_provider": "local",
-    "local_model": "SoelMgd/bert-pii-detection",
-    "ai_timeout_ms": 500
+    "local_model": "onnx-community/piiranha-v1-detect-personal-information-ONNX",
+    "ai_timeout_ms": 2000
   }
 }
 ```
@@ -211,25 +182,24 @@ Use your own OpenAI-compatible API endpoint (Ollama, LocalAI, etc.)
     "ai_detection": true,
     "ai_provider": "custom",
     "ai_timeout_ms": 5000,
-    "custom_api_endpoint": "http://localhost:1234/v1",
-    "custom_api_key": "optional-api-key"
+    "custom_api_endpoint": "http://localhost:11434/v1/chat/completions",
+    "custom_api_key": "optional-key"
   }
 }
 ```
 
-## Architecture Compatibility
+## Supported Model Architectures
 
-### Supported by @xenova/transformers:
+### Supported by @huggingface/transformers (v3+):
 - ✅ BERT
 - ✅ DistilBERT
 - ✅ RoBERTa / XLM-RoBERTa
 - ✅ DeBERTa / DeBERTa-v2 / DeBERTa-v3
 - ✅ ELECTRA
 - ✅ MobileBERT
+- ✅ ModernBERT
 
-### NOT Supported:
-- ❌ ModernBERT
-- ❌ GPT/LLaMA/Mistral (for token classification - different task)
+...plus any architecture with token-classification support. Remember: the repo must also ship ONNX weights.
 
 ## Examples
 
@@ -241,71 +211,48 @@ My database password is SuperSecret123! and my API key is sk-abc123...
 ```
 
 Regex detects: `sk-abc123...`
-AI detects: `SuperSecret123!`
+AI detects: `SuperSecret123!` (when the model flags it — see reliability note above)
 
-### Detecting secrets in code
-
-Input:
-```javascript
-const config = {
-  password: 'hunter2',
-  apiKey: process.env.API_KEY
-};
-```
-
-Regex detects: None (no obvious pattern)
-AI detects: `hunter2` as a password
-
-### Detecting PII in logs
+### Detecting PII in text
 
 Input:
 ```
-User john@example.com logged in with password "MyP@ssw0rd!" from 192.168.1.100
+User john@example.com lives at 742 Evergreen Terrace, Springfield
 ```
 
-Regex detects: `john@example.com`, `192.168.1.100`
-AI detects: `MyP@ssw0rd!` as a password
+Regex detects: `john@example.com`
+AI detects: `742 Evergreen Terrace, Springfield` (address components)
 
 ## Troubleshooting
 
 ### Model fails to load
 
-1. Check architecture compatibility - ensure model uses BERT/DistilBERT/RoBERTa/DeBERTa
+1. Check the repo ships ONNX weights (`onnx/` directory) — safetensors-only repos cannot load
 2. Verify you're using a PII model, not an NER model:
    ```javascript
-   // Check model labels
    const detector = await pipeline('token-classification', 'model-name');
    console.log(detector.model.config.id2label);
    // Should show: PASSWORD, API_KEY, etc. (not PER, ORG, LOC)
    ```
-3. Check internet connection for initial download
-4. Clear cache and retry: `rm -rf ~/.cache/huggingface/hub/`
+3. Check internet connection for initial download (or set `HF_ENDPOINT` to a mirror)
+4. Clear cache and retry: delete the `.cache/` directory inside the installed `@huggingface/transformers` package
 
-### Model downloads but doesn't detect passwords
+### Model loads but doesn't detect credentials
 
-The model is likely an NER model, not a PII model:
-- NER models detect: names, organizations, locations
-- PII models detect: passwords, API keys, credit cards, secrets
-
-Switch to a recommended PII model from the table above.
-
-### "Architecture not supported" error
-
-The model uses an architecture not supported by @xenova/transformers:
-- ❌ ModernBERT (e.g., joneauxedgar/pasteproof-pii-detector-v2)
-- ❌ GPT-style models for token classification
-
-Use models from the recommended list above.
+The default Piiranha model detects address-type PII most reliably; passwords and
+emails in free-form text are detected inconsistently (see reliability note above).
+If you need stronger credential detection, evaluate larger ONNX PII models or the
+OpenAI provider.
 
 ### Timeout errors
 
 ```
-[opencode-guard] AI detection failed: AI detection timeout after 500ms
+[opencode-guard] AI detection failed: AI detection timeout after 2000ms
 ```
 
 Solutions:
-1. Increase `ai_timeout_ms` (default: 500ms)
-2. Use a smaller model (e.g., gravitee-io/bert-small-pii-detection)
+1. Increase `ai_timeout_ms` (default: 2000ms)
+2. Use a smaller model
 3. Reduce text length being analyzed
 4. Consider using OpenAI provider for faster inference
 
@@ -314,15 +261,9 @@ Solutions:
 - Increase timeout if you can tolerate slower responses
 - Consider using OpenAI provider for better performance
 - Reduce `ai_timeout_ms` to fail faster (only regex detection will be used)
-- Use smaller models (30-66MB vs 400-560MB)
 
 ### Memory usage (Local provider)
 
 The local provider loads ML models into memory:
-- First run: Downloads model (30-560MB depending on model)
-- Runtime: Uses ~200-600MB RAM depending on model size
-
-**Recommendations:**
-- Low memory environment: Use `gravitee-io/bert-small-pii-detection` (30MB)
-- Balanced: Use `SoelMgd/bert-pii-detection` (66MB)
-- High accuracy: Use `iiiorg/piiranha-v1-detect-personal-information` (400MB)
+- First run: Downloads model (~300MB for the default)
+- Runtime: Uses several hundred MB of RAM depending on model size

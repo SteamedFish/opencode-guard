@@ -90,7 +90,7 @@ EOF
     "parallel": true,
     "ai_detection": false,
     "ai_provider": "local",
-    "ai_timeout_ms": 500
+    "ai_timeout_ms": 2000
   },
   "exclude_llm_endpoints": [
     "http://localhost:11434"
@@ -140,7 +140,7 @@ EOF
 | `detection.parallel` | 正则和 AI 检测并行运行 | `true` |
 | `detection.ai_detection` | 启用基于 AI 的检测。**这是唯一默认关闭的功能**——其他所有功能均开箱即用 | `false` |
 | `detection.ai_provider` | AI 提供商："local", "openai", 或 "custom" | `"local"` |
-| `detection.ai_timeout_ms` | AI 检测超时时间（毫秒） | `500` |
+| `detection.ai_timeout_ms` | AI 检测超时时间（毫秒） | `2000` |
 | `exclude_llm_endpoints` | 跳过脱敏的 LLM 端点。支持主机名或 `host:port` 条目（scheme 可选）。域名条目匹配精确主机及其子域名（如 `api.example.com` 覆盖 `v2.api.example.com`），但不会匹配无关后缀（如 `api.example.com.evil.tld` **不会**被排除）。空条目会被拒绝并告警 | `[]` |
 | `exclude_mcp_servers` | 视为"本地"的 MCP 服务器 | `[]` |
 | `exclude_mcp_tools` | 视为"本地"的 MCP 工具。**按服务器限定作用域：** 裸工具名仅对 `exclude_mcp_servers` 中列出的服务器生效（绝不匹配外部服务器）。如需对特定服务器上的特定工具豁免，请使用限定条目 `server/tool`（或实际的 `server_tool` 名称） | 内置工具 |
