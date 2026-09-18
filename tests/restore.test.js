@@ -165,3 +165,28 @@ test('restoreText handles triple-masking', () => {
   
   assert.strictEqual(restored, 'Email: secret@example.com', 'Should restore through triple-masking');
 });
+
+test('restoreText is substring-safe when one masked value contains another', () => {
+  const session = createTestSession();
+
+  // Manual mappings where a short mask is a strict substring of longer ones.
+  // Insertion order deliberately puts the shortest first: the old
+  // insertion-order implementation would corrupt the longer masks.
+  session.maskedToOriginal.set('MASK', 'short-original');
+  session.maskedToOriginal.set('MASKED_VALUE', 'long-original');
+  session.maskedToOriginal.set('MASKED', 'mid-original');
+
+  const result = restoreText('MASKED_VALUE and MASK and MASKED!', session);
+  assert.strictEqual(result, 'long-original and short-original and mid-original!');
+});
+
+test('restoreText still chain-restores with the regex implementation', () => {
+  const session = createTestSession();
+
+  // Chain: maskedA restores to a text containing maskedB
+  session.maskedToOriginal.set('maskedB', 'final-original');
+  session.maskedToOriginal.set('maskedA', 'prefix maskedB suffix');
+
+  const result = restoreText('value: maskedA', session);
+  assert.strictEqual(result, 'value: prefix final-original suffix');
+});

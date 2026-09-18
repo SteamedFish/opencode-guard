@@ -124,14 +124,14 @@ test('detectSensitiveData handles very long text', async () => {
 });
 
 test('redactText handles empty string', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const result = await redactText('', mockPatterns, session);
   assert.strictEqual(result.text, '');
   assert.strictEqual(result.count, 0);
 });
 
 test('redactText handles null/undefined', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const resultNull = await redactText(null, mockPatterns, session);
   const resultUndefined = await redactText(undefined, mockPatterns, session);
   assert.strictEqual(resultNull.text, null);
@@ -139,7 +139,7 @@ test('redactText handles null/undefined', async () => {
 });
 
 test('redactText handles non-string input', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const resultNum = await redactText(123, mockPatterns, session);
   const resultBool = await redactText(true, mockPatterns, session);
   const resultObj = await redactText({}, mockPatterns, session);
@@ -149,7 +149,7 @@ test('redactText handles non-string input', async () => {
 });
 
 test('redactDeep handles deeply nested objects', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const obj = {
     level1: {
       level2: {
@@ -167,7 +167,7 @@ test('redactDeep handles deeply nested objects', async () => {
 });
 
 test('redactDeep handles mixed arrays and objects', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const originalEmails = ['5t5lw@example.com', 'o5ihm@example.com', '2mxeu@example.com'];
   const data = [
     { email: originalEmails[0] },
@@ -181,7 +181,7 @@ test('redactDeep handles mixed arrays and objects', async () => {
 });
 
 test('redactDeep preserves primitive types', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const data = {
     num: 42,
     bool: true,
@@ -199,13 +199,13 @@ test('redactDeep preserves primitive types', async () => {
 });
 
 test('restoreText handles empty string', () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const result = restoreText('', session);
   assert.strictEqual(result, '');
 });
 
 test('restoreText handles null/undefined', () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const resultNull = restoreText(null, session);
   const resultUndefined = restoreText(undefined, session);
   assert.strictEqual(resultNull, null);
@@ -213,7 +213,7 @@ test('restoreText handles null/undefined', () => {
 });
 
 test('restoreText handles non-string input', () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const resultNum = restoreText(123, session);
   const resultBool = restoreText(false, session);
   const resultObj = restoreText({ foo: 'bar' }, session);
@@ -223,14 +223,14 @@ test('restoreText handles non-string input', () => {
 });
 
 test('restoreText handles text without masked values', () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const text = 'Just some normal text without any masked values';
   const result = restoreText(text, session);
   assert.strictEqual(result, text);
 });
 
 test('restoreText handles text with multiple masked values', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const original1 = 'secret_key_abc';
   const original2 = 'secret_key_xyz';
   const masked1 = session.getOrCreateMasked(original1, 'SECRET', 'pattern');
@@ -244,7 +244,7 @@ test('restoreText handles text with multiple masked values', async () => {
 });
 
 test('restoreDeep handles deeply nested restoration', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const original = 'ckkbgmlnp@data.com';
   const masked = session.getOrCreateMasked(original, 'EMAIL', 'email');
 
@@ -262,7 +262,7 @@ test('restoreDeep handles deeply nested restoration', async () => {
 });
 
 test('full pipeline: mask and restore roundtrip', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const original = 'User: bdpbx@example.com, Token: ghp_123456789012345678901234567890123456';
 
   const masked = await redactText(original, mockPatterns, session);
@@ -275,7 +275,7 @@ test('full pipeline: mask and restore roundtrip', async () => {
 });
 
 test('full pipeline: deep mask and restore roundtrip', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const original = {
     user: 'bdpbx@example.com',
     api_key: 'ghp_735599958828459258058367928805372252',
@@ -299,8 +299,8 @@ test('full pipeline: deep mask and restore roundtrip', async () => {
 });
 
 test('full pipeline: session isolation between sessions', async () => {
-  const session1 = new MaskSession('salt-1', 1000, 3600000);
-  const session2 = new MaskSession('salt-2', 1000, 3600000);
+  const session1 = new MaskSession('salt-1', { ttlMs: 3600000, maxMappings: 1000 });
+  const session2 = new MaskSession('salt-2', { ttlMs: 3600000, maxMappings: 1000 });
 
   const text = 'bdpbx@example.com';
 
@@ -320,7 +320,7 @@ test('full pipeline: session isolation between sessions', async () => {
 });
 
 test('edge case: empty patterns object', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const text = 'some text with onmvx@example.com';
 
   const result = await redactText(text, {}, session);
@@ -335,7 +335,7 @@ test('edge case: patterns with only exclude', async () => {
     exclude: new Set(['exclude_me']),
   };
 
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const text = 'text with exclude_me in it';
 
   const result = await redactText(text, patterns, session);
@@ -344,7 +344,7 @@ test('edge case: patterns with only exclude', async () => {
 });
 
 test('edge case: very long masked value', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const longValue = 'x'.repeat(1000);
 
   const masked = session.getOrCreateMasked(longValue, 'LONG', 'pattern');
@@ -354,7 +354,7 @@ test('edge case: very long masked value', async () => {
 });
 
 test('edge case: special characters in masked value', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const specialValue = 'value with special chars: <>&"\'\n\t\\';
 
   const masked = session.getOrCreateMasked(specialValue, 'SPECIAL', 'pattern');
@@ -364,7 +364,7 @@ test('edge case: special characters in masked value', async () => {
 });
 
 test('edge case: multiple identical values in same text', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const email = 'nodu@example.com';
   const text = `${email}, ${email}, and ${email}`;
 
@@ -376,7 +376,7 @@ test('edge case: multiple identical values in same text', async () => {
 });
 
 test('edge case: text with only masked content', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const text = 'nodu@example.com';
 
   const result = await redactText(text, mockPatterns, session);
@@ -404,7 +404,7 @@ test('detectSensitiveData handles patterns with start anchor', async () => {
 });
 
 test('redactDeep handles circular references gracefully', async () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const obj = { name: 'test@test.com', child: null };
   obj.child = obj;
 
@@ -415,11 +415,50 @@ test('redactDeep handles circular references gracefully', async () => {
 });
 
 test('restoreDeep handles circular references gracefully', () => {
-  const session = new MaskSession('test-salt', 1000, 3600000);
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 1000 });
   const obj = { value: 'test', self: null };
   obj.self = obj;
 
   assert.doesNotThrow(() => {
     restoreDeep(obj, session);
   });
+});
+
+test('session: TTL eviction removes expired mappings', () => {
+  const realNow = Date.now;
+  let fakeNow = 1_000_000;
+  Date.now = () => fakeNow;
+  try {
+    const session = new MaskSession('test-salt', { ttlMs: 100, maxMappings: 1000 });
+
+    const masked = session.getOrCreateMasked('ephemeral-secret', 'SECRET', 'pattern');
+    assert.strictEqual(session.lookupOriginal(masked), 'ephemeral-secret');
+
+    fakeNow += 150; // past TTL, no access in between
+    session.cleanup();
+
+    assert.strictEqual(session.lookupOriginal(masked), undefined, 'expired mapping must be evicted');
+    // A freshly masked value must remain restorable
+    const masked2 = session.getOrCreateMasked('fresh-secret', 'SECRET', 'pattern');
+    assert.strictEqual(restoreText(masked2, session), 'fresh-secret');
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('session: maxMappings eviction drops the oldest mapping', () => {
+  const session = new MaskSession('test-salt', { ttlMs: 3600000, maxMappings: 2 });
+
+  const masked1 = session.getOrCreateMasked('secret-1', 'SECRET', 'pattern');
+  const masked2 = session.getOrCreateMasked('secret-2', 'SECRET', 'pattern');
+  const masked3 = session.getOrCreateMasked('secret-3', 'SECRET', 'pattern');
+
+  assert.strictEqual(session.originalToMasked.size, 2, 'size must stay within maxMappings');
+  assert.strictEqual(session.lookupOriginal(masked1), undefined, 'oldest mapping evicted');
+  assert.strictEqual(session.lookupOriginal(masked2), 'secret-2');
+  assert.strictEqual(session.lookupOriginal(masked3), 'secret-3');
+
+  // Evicted value no longer restores; live ones still do
+  assert.strictEqual(restoreText(masked1, session), masked1);
+  assert.strictEqual(restoreText(masked2, session), 'secret-2');
 });

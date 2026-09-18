@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { maskIPv4, maskIPv6, isIPv4, isIPv6 } from '../../src/maskers/ip.js';
+import { createSeededRNG } from '../../src/utils.js';
 
 test('maskIPv4 keeps /16 prefix, masks host portion', () => {
   const rng = (min, max) => Math.floor((min + max) / 2);
@@ -74,4 +75,45 @@ test('maskIPv6 keeps /64 prefix, masks interface ID', () => {
   
   // Interface ID should be masked
   assert.ok(!result.includes('8a2e:370:7334'), 'Should mask interface ID');
+});
+
+test('maskIPv6 handles compressed notation and returns valid IPv6', () => {
+  const CC = String.fromCharCode(58, 58); // compressed-notation marker
+  const cases = [
+    '2001:db8:70a3:0a69' + CC + 'db53:3e57:355b:0169', // 4+4 explicit groups
+    '2001:db8:85a3' + CC + '8a2e:370:7334',            // 3+3 explicit groups
+    CC + '1',                                          // empty left side
+    'fe80' + CC,                                       // empty right side
+    CC,                                                // only compression
+    '2001:db8' + CC,                                   // short left side
+  ];
+
+  for (const ip of cases) {
+    const masked = maskIPv6(ip, createSeededRNG(`test-seed:${ip}`));
+    assert.notStrictEqual(masked, ip, `compressed input should be masked`);
+    assert.ok(isIPv6(masked), `masked output should be a valid IPv6 address, got ${masked}`);
+  }
+});
+
+test('maskIPv6 preserves the /64 prefix for compressed forms', () => {
+  const CC = String.fromCharCode(58, 58);
+  const masked = maskIPv6('2001:db8:85a3' + CC + '8a2e:370:7334', createSeededRNG('test-seed'));
+
+  // Expanded form is 2001:db8:85a3:0000:... - the first 4 groups are the /64 prefix
+  const groups = masked.split(':');
+  assert.strictEqual(groups.length, 8, 'output is full 8-group form');
+  assert.deepStrictEqual(groups.slice(0, 4), ['2001', 'db8', '85a3', '0000']);
+});
+
+test('maskIPv6 round-trips through a session for compressed forms', () => {
+  const CC = String.fromCharCode(58, 58);
+  const original = '2001:db8:70a3:0a69' + CC + 'db53:3e57:355b:0169';
+  const masked = maskIPv6(original, createSeededRNG(`salt:${original}:IPV6`));
+
+  assert.ok(isIPv6(masked), 'masked value must be parseable IPv6');
+  assert.deepStrictEqual(
+    masked.split(':').slice(0, 4),
+    ['2001', 'db8', '70a3', '0a69'],
+    'keeps original /64 prefix groups'
+  );
 });

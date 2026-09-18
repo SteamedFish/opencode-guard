@@ -45,6 +45,18 @@ test('maskDatabaseConn should mask PostgreSQL connection string', () => {
   assert.ok(!masked.includes('secret123'));
 });
 
+test('maskDatabaseConn should mask mixed-case scheme (PostgreSQL://)', () => {
+  const rng = createSeededRNG('test-seed');
+  const conn = 'PostgreSQL://mixeduser:CaseSecret99@db.internal.example:5432/prod';
+  const masked = maskDatabaseConn(conn, rng);
+
+  assert.notStrictEqual(masked, conn, 'mixed-case scheme must be parsed, not passed through');
+  assert.ok(masked.startsWith('PostgreSQL://'), 'scheme preserved');
+  assert.ok(masked.includes('@db.internal.example:5432/prod'), 'host/port/db preserved');
+  assert.ok(!masked.includes('mixeduser'), 'username masked');
+  assert.ok(!masked.includes('CaseSecret99'), 'password masked');
+});
+
 test('maskDatabaseConn should mask MongoDB connection string with options', () => {
   const rng = createSeededRNG('test-seed');
   const conn = 'mongodb+srv://dbuser:dbpass@cluster0.mongodb.net/mydb?retryWrites=true';

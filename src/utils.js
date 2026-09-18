@@ -13,8 +13,15 @@ export function generateHmacHash(salt, value) {
 }
 
 /**
- * Create a seeded random number generator
- * Uses xorshift128+ algorithm seeded with HMAC hash
+ * Create a seeded random number generator.
+ * Uses the xorshift128+ algorithm seeded with an HMAC-SHA256 hash.
+ *
+ * NOTE: xorshift128+ is a NON-cryptographic PRNG. That is acceptable here by
+ * design: every masked value gets a fresh, unpredictable seed derived from
+ * HMAC-SHA256(globalSalt, value) — the secrecy comes from the salt/keyed hash,
+ * not from the PRNG. Never reuse this RNG with a predictable seed for
+ * security purposes.
+ *
  * @param {string} seed
  * @returns {Function} (min, max) => random integer in [min, max]
  */
@@ -32,7 +39,10 @@ export function createSeededRNG(seed) {
     x ^= x << BigInt(23);
     s1 = x ^ y ^ (x >> BigInt(17)) ^ (y >> BigInt(26));
     
-    // Convert to number in range [min, max]
+    // Convert to number in range [min, max].
+    // The scaling below technically has a modulo/range bias, but it is
+    // negligible: the 64-bit space is ~2^64 while our ranges are tiny
+    // (<= 65536), so the bias is below 2^-48 and irrelevant for masking.
     const uint64_max = BigInt('0xFFFFFFFFFFFFFFFF');
     const normalized = Number(s1 % uint64_max) / Number(uint64_max);
     return Math.floor(normalized * (max - min + 1)) + min;
