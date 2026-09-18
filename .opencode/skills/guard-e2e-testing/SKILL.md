@@ -125,10 +125,11 @@ masked token the plugin just registered — so the displayed `echo:` line proves
 
 ## Pitfalls — round 3 (all hit in practice, 2026-09-19)
 
-13. **opencode's `write` tool rejects relative `filePath`** ("Update the
-    arguments and call the tool again"). For tool-arg restoration probes use
-    the shell tool with `printf ... > file` (relative paths resolve against
-    the opencode project cwd), or emit an absolute path.
+13. **opencode v2's `write` tool schema uses `path`, not `filePath`**
+    ("Update the arguments and call the tool again" + `path: Missing key`).
+    Fixture tool-call args must match the RUNTIME's schema exactly — dump the
+    request's tools array from capture.log and read the parameter names. A
+    relative `path` works fine (resolves against the opencode project cwd).
 14. **Tool names and schemas vary by distribution/agent**: OMO slim names the
     shell tool `shell` (not `bash`), and opencode tool schemas use
     `additionalProperties: false` — an extra arg field (e.g. `description`)
@@ -142,3 +143,23 @@ masked token the plugin just registered — so the displayed `echo:` line proves
     assumption fails; count came back 0 for a matching line). Use POSIX
     classes: `grep -cE '[[:alnum:]._%+-]+@[[:alnum:].-]+'`. (Python `re` `\w`
     is fine — capture-server's EMAIL_RE is unaffected.)
+17. **v2 MCP tools are invisible to a capture server by default** (codemode):
+    v2.0.6 registers MCP tools with `codemode: true`, nesting them into the
+    `execute` Code Mode tool — they never appear in the provider request's
+    `tools` array (the system-prompt catalog line `tools.fake.lookup_secret`
+    is NOT the wire name). For MCP E2E you MUST use the native config form
+    `mcp.servers.<name>.codemode: false` — the legacy `"mcp": {"<name>": ...}`
+    form silently strips `codemode`. Wire/hook name is `<server>_<tool>`
+    sanitized. Also: opencode races MCP connect vs round 1 — the MCP tool is
+    absent from the round-1 tools array and appears from round 2 onward, so
+    the capture server needs prefer-tool deferral (`--prefer-tool` calls the
+    tool on the first round where it appears, forcing rounds with a benign
+    call meanwhile).
+18. **Inline probe commands carrying probe values are UNRELIABLE end-to-end**
+    (supersedes the "grep -c is always safe" assumption of pitfall 8): the
+    probing agent's own plugin session masks/restores email-shaped values in
+    shell commands AND tool results, and observed grep counts contradicted
+    byte-level file content (grep reported 1 for an original that python
+    byte-count proved absent). All probe assertions must run in a
+    self-contained driver (`scripts/e2e/verify-probe.py`) that derives probe
+    values FROM files on disk and prints only PASS/FAIL + counts.
