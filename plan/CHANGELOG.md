@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-09-19 — v2 stream restore: Anthropic-native SSE shapes (omos/sse-anthropic-restore)
+
+Closed the Gate 3 follow-up in `plan/TODO.md`: the SSE-aware restore path only understood OpenAI `chat.completion.chunk` events, so Anthropic-native streams (`content_block_delta` / `text_delta` / `input_json_delta`) passed through byte-identical and masked values stayed masked. 342 tests green (was 332; `tests/response-unmasker.test.js` 24→35 cases).
+
+- **`src/response-unmasker.js`**: added a per-shape path for Anthropic Messages API events alongside the OpenAI one, selected per event after `JSON.parse` (OpenAI `choices` array first, then `type`-tagged shapes).
+  - `content_block_delta` — persistent StreamingUnmaskers keyed per (block index, field) for the `ANTHROPIC_DELTA_FIELDS` table: `delta.text` (`text_delta`), `delta.partial_json` (`input_json_delta`, streamed tool args), `delta.thinking` (`thinking_delta`). A hold-back-truncated value is emitted as `''` and the field is never dropped.
+  - `content_block_start` — `content_block.text` / `.thinking` share the block's persistent unmasker (one logical stream); tool_use `content_block.name` is a one-shot transform+flush (names arrive complete).
+  - Flush points: `content_block_stop` flushes only that block, `message_delta` / `message_stop` flush all blocks, and stream end flushes whatever remains — held-back remainders are injected as synthetic `content_block_delta` events BEFORE the triggering event, so the hold-back byte-loss invariant holds and no OpenAI-shaped `choices` chunk is ever emitted into an Anthropic stream.
+  - Unmodified events still pass through byte-identical; unknown `type`s (`ping`, `message_start`, errors), unparseable data, and non-chunk JSON stay verbatim; internal errors still degrade to verbatim passthrough (fail-safe, never throws).
+- **`tests/response-unmasker.test.js`**: 11 new cases — single-event and split-across-events text restore, split `partial_json` arguments, hold-back-truncated `partial_json` field retention, `thinking_delta`, `content_block_start` text + tool_use name, remainder flush before `content_block_stop` / `message_stop` / at stream end, per-block flush isolation, byte-identical unmodified Anthropic stream, and an engine-level round-trip (real `redactText` masking → Anthropic delta stream split mid-masked-key → original reply restored, zero residual token).
+- **`AGENTS.md`**: v2 hook note 3 no longer claims Anthropic-native shapes are unrestorable.
+
 ## 2026-09-19 — E2E extension: AI detection fix + SSE-aware streaming restore (omos/e2e-extension)
 
 Full end-to-end verification against a real OpenCode v2 runtime (capture-server harness in `scripts/e2e/`). Found and fixed two real defects that unit tests could not see. 332 tests green (was 322).

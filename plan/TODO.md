@@ -2,19 +2,10 @@
 
 ## Tracked follow-ups
 
-### v2 stream restore: non-OpenAI SSE shapes (from Gate 3 review, 2026-09-19)
-
-`src/response-unmasker.js` SSE-aware restore only handles OpenAI
-`chat.completion.chunk` events. Anthropic-native SSE shapes
-(`content_block_delta` / `text_delta` / `input_json_delta`) pass through
-verbatim — fail-safe but NOT restored (functional regression vs the old
-byte-level path, which restored single-event values in any JSON field).
-
-Fix direction (per Gate 3): add a per-shape field table mapping provider
-shapes to (text field path, arguments field path), e.g. `delta.text`,
-`delta.partial_json`, `delta.thinking`; reuse the same persistent
-StreamingUnmasker keying per (shape, index).
-
-Also noted: mask-all-occurrences for AI offset binding is still
-`TODO(fail-closed)` in `src/ai-detector/providers/local.js` (duplicate
-occurrences of the same entity value in one text: only the first is masked).
+### AI detection: mask-all-occurrences for duplicate flagged values
+`src/ai-detector/providers/local.js` binds detected spans strictly
+left-to-right (`TODO(fail-closed)` in `detect()`). When the model flags one of
+several identical occurrences of a value, only the first-bound occurrence is
+masked. Masking all occurrences of the flagged value (an engine change) would
+close the residual leak. Noted during the 2026-09-19 Gate 3 review; the v2
+non-OpenAI SSE shape item from the same review was fixed on 2026-09-19.
