@@ -12,6 +12,12 @@ AI Detection uses machine learning models to contextually analyze text and ident
 
 This complements the existing regex-based detection by catching edge cases and context-dependent sensitive information.
 
+### Duplicate occurrences
+
+When the model flags a value (e.g. an email) that appears several times in the same message, the plugin masks **every whole-token occurrence** of that value, not just the first one — otherwise the remaining copies would reach the provider in the clear. A copy embedded inside a longer ASCII identifier (`John` in `Johnson`, or `1234` in `ref1234x`) is not expanded, because it is a different token; the span the model actually detected is always masked.
+
+Masking stays deterministic: every occurrence of the same value maps to the same masked token, so response restore is unaffected.
+
 ## Providers
 
 Three AI provider options are available:

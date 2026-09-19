@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-09-19 — AI detection: mask every occurrence of a duplicate flagged value (omos/ai-mask-occurrences)
+
+Closed the open follow-up in `plan/TODO.md`. 359 tests (was 343; +16).
+
+- **`src/ai-detector/expand.js`** (new): `expandFlaggedOccurrences(text, results)` adds a span for every whole-token occurrence of a flagged value. Occurrences embedded inside a longer ASCII identifier (`John` in `Johnson`, `1234` in `ref1234x`) are not expanded — they are a different token; the model's own anchor span is always kept. The boundary check is ASCII-only, so adjacent non-ASCII text does not block expansion. Inputs are never mutated.
+- **`src/ai-detector/index.js`**: `AIDetector.detect` now derives `text` from `text.slice(start, end)` when a provider returns offsets without `value` (OpenAI/custom return no `value`; previously the engine received `undefined`), then expands spans via `expandFlaggedOccurrences`. Overlap/dedup stays with `mergeResults`; `src/engine.js` is unchanged.
+- **`src/ai-detector/providers/local.js`**: comment-only — the old `TODO(fail-closed)` note is replaced by a pointer to the downstream expansion; left-to-right binding is still used to anchor each entity to a real occurrence.
+- **Tests**: new `tests/ai-detector/expand.test.js` (9) and `tests/ai-detector/index.test.js` (4); `tests/detector.test.js` +2 (expansion through the pipeline; dedup against regex matches); `tests/engine.test.js` +1 (both occurrences masked with the same token, original recoverable).
+- **Docs**: `docs/AI_DETECTION.md` / `docs/AI_DETECTION.zh-CN.md` gain a "Duplicate occurrences" section; `AGENTS.md` masking-strategy list gains item 6.
+
 ## 2026-09-19 — E2E harness: Anthropic Messages API probe modes (omos/anthropic-e2e)
 
 Runtime E2E coverage for the Anthropic SSE restore path added earlier today (`src/response-unmasker.js`), which the existing harness could not exercise because it only ever emitted OpenAI `chat.completion` chunks. Verified against opencode v2.0.6 with `@ai-sdk/anthropic` pointed at the capture server.

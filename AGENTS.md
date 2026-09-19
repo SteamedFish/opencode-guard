@@ -80,6 +80,7 @@ Privacy-focused OpenCode plugin using **format-preserving masking**. Masks sensi
 3. **Prefix preservation**: API keys keep prefixes (`sk-`, `ghp_`)
 4. **Domain preservation**: Emails keep domain part
 5. **Network preservation**: IPs keep subnet prefix
+6. **All-occurrence masking**: a value flagged by AI detection is masked at every whole-token occurrence in the same message, not just the first-bound one (see `src/ai-detector/expand.js`)
 
 ## DOCUMENTATION CONVENTIONS
 
