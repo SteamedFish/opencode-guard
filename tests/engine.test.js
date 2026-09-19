@@ -1,5 +1,6 @@
 import { redactText, redactDeep } from '../src/engine.js';
 import { MaskSession } from '../src/session.js';
+import { AIDetector } from '../src/ai-detector/index.js';
 import { test } from 'node:test';
 import assert from 'node:assert';
 
@@ -123,4 +124,29 @@ test('redactDeep handles numbers and booleans', async () => {
   
   assert.strictEqual(await redactDeep(42, patterns, session), 42);
   assert.strictEqual(await redactDeep(true, patterns, session), true);
+});
+
+test('redactText masks every occurrence of an AI-flagged value', async () => {
+  const session = createTestSession();
+  const value = 'qyrk@example.com';
+  const text = `mail ${value} again ${value} done`;
+  const first = text.indexOf(value);
+  const patterns = { regex: [], keywords: [], exclude: new Set() };
+  const aiDetector = new AIDetector({});
+  aiDetector.initialized = true;
+  aiDetector.provider = {
+    detect: async () => [
+      { start: first, end: first + value.length, value, type: 'EMAIL', score: 0.9 },
+    ],
+  };
+
+  const result = await redactText(text, patterns, session, aiDetector);
+
+  assert.strictEqual(result.count, 2, 'both occurrences must be masked');
+  assert.ok(!result.text.includes(value), 'the original value must not survive anywhere');
+
+  const maskedTokens = result.text.match(/\S+@\S+/g) || [];
+  assert.strictEqual(maskedTokens.length, 2, 'two masked email tokens expected');
+  assert.strictEqual(maskedTokens[0], maskedTokens[1], 'the same value must map to the same mask');
+  assert.strictEqual(session.lookupOriginal(maskedTokens[0]), value);
 });

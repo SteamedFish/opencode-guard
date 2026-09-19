@@ -1,4 +1,5 @@
 import { detectSensitiveData } from '../src/detector.js';
+import { AIDetector } from '../src/ai-detector/index.js';
 import { test } from 'node:test';
 import assert from 'node:assert';
 
@@ -172,4 +173,50 @@ test('detectSensitiveData reuses regex objects across calls without stale lastIn
   const second = await detectSensitiveData(`mail ${email}`, patterns);
   assert.strictEqual(first.length, 1);
   assert.strictEqual(second.length, 1, 'second call must still match after lastIndex reset');
+});
+
+test('detectSensitiveData expands an AI-flagged value to all occurrences', async () => {
+  const value = 'mpoq@example.com';
+  const text = `first ${value} then ${value} end`;
+  const first = text.indexOf(value);
+  const aiDetector = new AIDetector({});
+  aiDetector.initialized = true;
+  aiDetector.provider = {
+    detect: async () => [
+      { start: first, end: first + value.length, value, type: 'EMAIL', score: 0.9 },
+    ],
+  };
+  const patterns = { regex: [], keywords: [], exclude: new Set() };
+
+  const results = await detectSensitiveData(text, patterns, aiDetector);
+
+  assert.strictEqual(results.length, 2);
+  assert.deepStrictEqual(
+    results.map(r => r.start).sort((a, b) => a - b),
+    [first, text.indexOf(value, first + 1)].sort((a, b) => a - b)
+  );
+  assert.ok(results.every(r => r.text === value));
+});
+
+test('detectSensitiveData deduplicates an AI-expanded value against regex matches', async () => {
+  const value = 'klze@example.com';
+  const text = `first ${value} then ${value} end`;
+  const first = text.indexOf(value);
+  const aiDetector = new AIDetector({});
+  aiDetector.initialized = true;
+  aiDetector.provider = {
+    detect: async () => [
+      { start: first, end: first + value.length, value, type: 'EMAIL', score: 0.9 },
+    ],
+  };
+  const patterns = {
+    regex: [{ regex: /\S+@\S+\.\S+/g, category: 'EMAIL', maskAs: 'email' }],
+    keywords: [],
+    exclude: new Set(),
+  };
+
+  const results = await detectSensitiveData(text, patterns, aiDetector);
+
+  assert.strictEqual(results.length, 2, 'regex + expanded AI results must not duplicate spans');
+  assert.ok(results.every(r => r.text === value));
 });
