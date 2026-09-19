@@ -137,10 +137,11 @@ function createByteTransform(session, decoder, encoder) {
  * of its data values per the SSE spec). Comment keep-alives and
  * event:/id:/retry:/unknown field lines pass through immediately.
  *
- * For each data event whose payload JSON-parses to a chat.completion.chunk-
- * like object with a non-empty `choices` array, restorable fields are fed
- * through persistent StreamingUnmaskers so masked values SPLIT ACROSS EVENTS
- * still restore:
+ * Two provider stream shapes are restored at the content-field level; every
+ * restorable field is fed through a persistent StreamingUnmasker so masked
+ * values SPLIT ACROSS EVENTS still restore.
+ *
+ * OpenAI chat.completion.chunk (non-empty `choices` array):
  *  - choice.delta.content           -> one unmasker per choice.index
  *  - choice.delta.reasoning_content -> a SEPARATE unmasker per choice.index
  *    (reasoning models echo user input)
@@ -151,10 +152,26 @@ function createByteTransform(session, decoder, encoder) {
  *  - tool_calls[j].function.name -> one-shot transform+flush (names arrive
  *    complete in a single chunk)
  *
+ * Anthropic Messages API stream (`type`-tagged events; the per-shape field
+ * table is ANTHROPIC_DELTA_FIELDS):
+ *  - content_block_delta.delta.text / .partial_json / .thinking -> one
+ *    unmasker per (block index, field) over the concatenated fragments; the
+ *    emitted value may be '' (hold-back truncation) and the field is never
+ *    dropped
+ *  - content_block_start.content_block.text / .thinking -> the SAME
+ *    persistent unmasker as the block's deltas (one logical stream)
+ *  - content_block_start.content_block.name -> one-shot transform+flush
+ *    (tool_use names arrive complete in the start event)
+ *  - content_block_stop flushes that block's unmaskers; remainders are
+ *    injected as synthetic content_block_delta events BEFORE the stop event
+ *  - message_delta / message_stop flush ALL remaining block unmaskers the
+ *    same way (there is no [DONE] in this shape)
+ *
  * Events where no field changed are emitted as their ORIGINAL raw bytes;
  * only modified events are re-serialized via JSON.stringify. Events with
- * `choices: []` (usage chunks), unparseable data, error events, and any
- * non-chunk JSON pass through verbatim.
+ * `choices: []` (usage chunks), unparseable data, error events, ping /
+ * message_start, unknown `type`s, and any non-chunk JSON pass through
+ * verbatim.
  *
  * Hold-back byte-loss invariant: bytes held back by an unmasker at the end
  * of event N surface later — completed+restored in a later event of the same
@@ -182,6 +199,21 @@ function createSseTransform(session, decoder, encoder) {
   const contentUnmaskers = new Map(); // choiceIndex -> StreamingUnmasker
   const reasoningUnmaskers = new Map(); // choiceIndex -> StreamingUnmasker
   const toolArgUnmaskers = new Map(); // `${choiceIndex}:${toolCallIndex}` -> StreamingUnmasker
+  const anthropicUnmaskers = new Map(); // `${blockIndex}:${fieldKey}` -> StreamingUnmasker
+
+  /**
+   * Per-shape field table for Anthropic Messages API content_block_delta
+   * events: streamed text lives in one of these delta fields (the OpenAI
+   * analogs are delta.content, tool_calls[].function.arguments, and
+   * delta.reasoning_content). `key` scopes the persistent unmasker per
+   * (block index, field); `deltaType` rebuilds synthetic delta events when
+   * held-back remainders are flushed at block/message/stream end.
+   */
+  const ANTHROPIC_DELTA_FIELDS = [
+    { prop: 'text', key: 'text', deltaType: 'text_delta' },
+    { prop: 'partial_json', key: 'args', deltaType: 'input_json_delta' },
+    { prop: 'thinking', key: 'thinking', deltaType: 'thinking_delta' },
+  ];
 
   function lazyUnmasker(map, key) {
     let u = map.get(key);
@@ -205,7 +237,7 @@ function createSseTransform(session, decoder, encoder) {
    */
   function flushAllText() {
     let out = '';
-    for (const map of [contentUnmaskers, reasoningUnmaskers, toolArgUnmaskers]) {
+    for (const map of [contentUnmaskers, reasoningUnmaskers, toolArgUnmaskers, anthropicUnmaskers]) {
       for (const [, u] of map) {
         try {
           out += u.flush();
@@ -280,6 +312,18 @@ function createSseTransform(session, decoder, encoder) {
   }
 
   /**
+   * Flush every pending unmasker (both stream shapes) and emit the remainders
+   * as synthetic events: an OpenAI-shaped chunk for OpenAI unmaskers, then
+   * content_block_delta events for Anthropic ones. Used before [DONE] and at
+   * stream end, where the shape of what is pending decides what is emitted.
+   */
+  function emitRemainders(enqueue) {
+    const synth = buildSyntheticChunk(flushAllRemainders());
+    if (synth) enqueue(`data: ${JSON.stringify(synth)}\n\n`);
+    for (const ev of flushAnthropicRemainders()) enqueue(`data: ${JSON.stringify(ev)}\n\n`);
+  }
+
+  /**
    * Feed one choice's delta fields through their persistent unmaskers.
    * Mutates `delta`; returns true when any field's output differed from its
    * input (restore hit or hold-back truncation).
@@ -329,6 +373,79 @@ function createSseTransform(session, decoder, encoder) {
   }
 
   /**
+   * Feed one Anthropic content_block_delta's restorable fields through their
+   * persistent unmaskers (keyed per block index + field). Mutates `delta`;
+   * returns true when any field's output differed from its input (restore hit
+   * or hold-back truncation).
+   */
+  function processAnthropicDelta(delta, index) {
+    let modified = false;
+    for (const { prop, key } of ANTHROPIC_DELTA_FIELDS) {
+      if (typeof delta[prop] !== 'string' || delta[prop].length === 0) continue;
+      const out = lazyUnmasker(anthropicUnmaskers, `${index}:${key}`).transform(delta[prop]);
+      if (out !== delta[prop]) {
+        delta[prop] = out; // may be '' — the field is never dropped
+        modified = true;
+      }
+    }
+    return modified;
+  }
+
+  /**
+   * Feed one Anthropic content_block_start's restorable fields. `text` /
+   * `thinking` share the persistent unmasker of that block's deltas (one
+   * logical stream); `name` (tool_use) arrives complete and is a one-shot
+   * transform+flush. Mutates `contentBlock`; returns true when modified.
+   */
+  function processAnthropicBlockStart(contentBlock, index) {
+    let modified = false;
+    for (const { prop, key } of ANTHROPIC_DELTA_FIELDS) {
+      if (typeof contentBlock[prop] !== 'string' || contentBlock[prop].length === 0) continue;
+      const out = lazyUnmasker(anthropicUnmaskers, `${index}:${key}`).transform(contentBlock[prop]);
+      if (out !== contentBlock[prop]) {
+        contentBlock[prop] = out;
+        modified = true;
+      }
+    }
+    if (typeof contentBlock.name === 'string' && contentBlock.name.length > 0) {
+      // One-shot: tool_use names arrive complete in the start event.
+      const u = new StreamingUnmasker(view, unmaskerOptions);
+      const out = u.transform(contentBlock.name) + u.flush();
+      if (out !== contentBlock.name) {
+        contentBlock.name = out;
+        modified = true;
+      }
+    }
+    return modified;
+  }
+
+  /**
+   * Flush Anthropic block unmaskers and build synthetic content_block_delta
+   * events carrying their held-back remainders. With `index` given, flushes
+   * only that block; otherwise flushes every block. Clears the flushed
+   * entries. Returns the synthetic events (possibly empty), ordered by block
+   * index.
+   */
+  function flushAnthropicRemainders(index) {
+    const events = [];
+    for (const key of [...anthropicUnmaskers.keys()]) {
+      const sep = key.indexOf(':');
+      const idx = Number(key.slice(0, sep));
+      if (index !== undefined && idx !== index) continue;
+      const field = ANTHROPIC_DELTA_FIELDS.find((f) => f.key === key.slice(sep + 1));
+      const rem = takeFlushed(anthropicUnmaskers, key);
+      if (!rem || !field) continue;
+      events.push({
+        type: 'content_block_delta',
+        index: idx,
+        delta: { type: field.deltaType, [field.prop]: rem },
+      });
+    }
+    events.sort((a, b) => a.index - b.index);
+    return events;
+  }
+
+  /**
    * A finish_reason arrived for choice `idx`: flush that choice's unmaskers
    * and merge the remainders into the finish chunk's delta (content and
    * finish_reason in one chunk is legal). Mutates `choice`; returns true when
@@ -374,6 +491,50 @@ function createSseTransform(session, decoder, encoder) {
   }
 
   /**
+   * Handle one parsed non-OpenAI chunk event. Recognized Anthropic Messages
+   * API shapes are restored/flushed; the event's ORIGINAL raw bytes are
+   * re-emitted unless a field changed (then the object is re-serialized).
+   * Returns true when the event matched a known Anthropic shape (i.e. it was
+   * emitted here), false when the caller should pass it through verbatim.
+   */
+  function handleAnthropicEvent(obj, raw, enqueue) {
+    const type = obj.type;
+    if (typeof type !== 'string') return false;
+
+    if (
+      type === 'content_block_delta' &&
+      typeof obj.index === 'number' &&
+      obj.delta &&
+      typeof obj.delta === 'object'
+    ) {
+      const modified = processAnthropicDelta(obj.delta, obj.index);
+      enqueue(modified ? `data: ${JSON.stringify(obj)}\n\n` : raw);
+      return true;
+    }
+    if (
+      type === 'content_block_start' &&
+      typeof obj.index === 'number' &&
+      obj.content_block &&
+      typeof obj.content_block === 'object'
+    ) {
+      const modified = processAnthropicBlockStart(obj.content_block, obj.index);
+      enqueue(modified ? `data: ${JSON.stringify(obj)}\n\n` : raw);
+      return true;
+    }
+    if (type === 'content_block_stop' && typeof obj.index === 'number') {
+      for (const ev of flushAnthropicRemainders(obj.index)) enqueue(`data: ${JSON.stringify(ev)}\n\n`);
+      enqueue(raw);
+      return true;
+    }
+    if (type === 'message_delta' || type === 'message_stop') {
+      for (const ev of flushAnthropicRemainders()) enqueue(`data: ${JSON.stringify(ev)}\n\n`);
+      enqueue(raw);
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Dispatch one complete data event. `blankRaw` is the event's terminating
    * blank line (raw, including its own line terminator).
    */
@@ -386,8 +547,7 @@ function createSseTransform(session, decoder, encoder) {
       if (payload.trim() === SSE_DONE_PAYLOAD) {
         // Flush all pending unmaskers; inject remainders BEFORE [DONE], then
         // pass [DONE] through byte-identical.
-        const synth = buildSyntheticChunk(flushAllRemainders());
-        if (synth) enqueue(`data: ${JSON.stringify(synth)}\n\n`);
+        emitRemainders(enqueue);
         enqueue(raw);
         return;
       }
@@ -398,7 +558,12 @@ function createSseTransform(session, decoder, encoder) {
         enqueue(raw); // unparseable data: verbatim
         return;
       }
-      if (!obj || typeof obj !== 'object' || !Array.isArray(obj.choices) || obj.choices.length === 0) {
+      if (!obj || typeof obj !== 'object') {
+        enqueue(raw); // unparseable-ish JSON (null/primitive): verbatim
+        return;
+      }
+      if (!Array.isArray(obj.choices) || obj.choices.length === 0) {
+        if (handleAnthropicEvent(obj, raw, enqueue)) return;
         enqueue(raw); // non-chunk JSON / error events / usage chunks: verbatim
         return;
       }
@@ -504,9 +669,9 @@ function createSseTransform(session, decoder, encoder) {
         dataValues = [];
         lineBuffer = '';
         // Stream ended without [DONE]: flush all unmaskers and inject any
-        // remainders as one synthetic chunk.
-        const synth = buildSyntheticChunk(flushAllRemainders());
-        if (synth) enqueue(`data: ${JSON.stringify(synth)}\n\n`);
+        // remainders as one synthetic chunk (OpenAI shape) and/or
+        // content_block_delta events (Anthropic shape).
+        emitRemainders(enqueue);
       } catch (err) {
         console.warn('[opencode-guard] SSE restore flush failed:', err);
       }
