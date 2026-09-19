@@ -163,3 +163,28 @@ masked token the plugin just registered — so the displayed `echo:` line proves
     byte-count proved absent). All probe assertions must run in a
     self-contained driver (`scripts/e2e/verify-probe.py`) that derives probe
     values FROM files on disk and prints only PASS/FAIL + counts.
+
+## Anthropic Messages API shape probes (2026-09-19)
+
+To exercise the SSE-aware restore against the Anthropic shape (not just
+OpenAI `chat.completion.chunk`), configure the fake provider with
+`"package": "aisdk:@ai-sdk/anthropic"` and a `baseURL` ending in `/v1` — the
+SDK posts to `${baseURL}/messages`, and the capture server answers any path
+containing `messages` when `--mode=anthropic*`. `@ai-sdk/anthropic` parses
+with `createEventSourceResponseHandler` → `parseJsonEventStream`, which reads
+only the `data:` payload and discriminates on the JSON `type` (the `event:`
+name is ignored; `[DONE]` is skipped), so the fake stream may include the real
+`event:` lines harmlessly.
+
+Modes: `anthropic` (single `text_delta`), `anthropic-split` (email split
+across two `text_delta` events), `anthropic-last` (email only in the final
+delta before `content_block_stop` — flush-at-stream-end), `anthropic-tool-split`
+(`tool_use` with `input_json_delta` fragments split mid-email; `--mode=tool-file`
+proves `tool.execute.before` restored the args).
+
+Verified against opencode v2.0.6 on 2026-09-19: `anthropic`, `anthropic-split`,
+`anthropic-last`, `anthropic-tool-split --mode=tool-file` and an OpenAI
+`echo-split` regression all `RESULT: PASS`. The provider package is NOT bundled
+in the opencode binary (no `@ai-sdk/anthropic` loader in the app), so the first
+run installs it on demand from npm — network required.
+

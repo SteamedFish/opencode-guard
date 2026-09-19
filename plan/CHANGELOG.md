@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 2026-09-19 — E2E harness: Anthropic Messages API probe modes (omos/anthropic-e2e)
+
+Runtime E2E coverage for the Anthropic SSE restore path added earlier today (`src/response-unmasker.js`), which the existing harness could not exercise because it only ever emitted OpenAI `chat.completion` chunks. Verified against opencode v2.0.6 with `@ai-sdk/anthropic` pointed at the capture server.
+
+- **`scripts/e2e/capture-server.py`**: new Anthropic modes served on `/v1/messages` — `anthropic` (single `text_delta` echo), `anthropic-split` (email split across two `text_delta` events + `abcdef` suffix, the hold-back case), `anthropic-last` (email only in the final delta before `content_block_stop`), `anthropic-tool-split` (`tool_use` block with two `input_json_delta` `partial_json` fragments split mid-email; plain echo on the `tool_result` round). Emits real `event:` lines plus `data:` JSON, `message_start`/`message_delta`/`message_stop`, and no `[DONE]` (the shape has none). Tool selection/argument building is now shape-agnostic (`tool_name`/`tool_schema` handle OpenAI `function.*` and Anthropic `input_schema`); `--crlf`/`--keepalive`/`--tool-stdout` still apply, `--no-done`/`--reasoning` are documented as OpenAI-only.
+- **E2E evidence** (opencode v2.0.6, fresh capture log per probe, assertions via `verify-probe.py`): `anthropic` PASS (A1–A5), `anthropic-split` PASS (A1–A5; masked email split mid-value across events still restored byte-exactly with the trailing `abcdef` intact), `anthropic-last` PASS (A1–A5), `anthropic-tool-split --mode=tool-file` PASS (A1–A5 + T1: `tool-probe-output.txt` holds the original email exactly once, so `tool.execute.before` restored the streamed `input_json_delta` args), and an OpenAI `echo-split` regression PASS — proving the harness refactor left the existing OpenAI path intact.
+- **Docs**: `scripts/e2e/README.md` / `README.zh-CN.md` document the new modes, the provider config recipe (`baseURL` must end in `/v1`; the SDK posts to `${baseURL}/messages`) and a smoke test; the `guard-e2e-testing` skill gains an Anthropic-shape probe section (including that `@ai-sdk/anthropic` is not bundled in the opencode binary and installs on demand from npm).
+
 ## 2026-09-19 — v2 stream restore: Anthropic-native SSE shapes (omos/sse-anthropic-restore)
 
 Closed the Gate 3 follow-up in `plan/TODO.md`: the SSE-aware restore path only understood OpenAI `chat.completion.chunk` events, so Anthropic-native streams (`content_block_delta` / `text_delta` / `input_json_delta`) passed through byte-identical and masked values stayed masked. 342 tests green (was 332; `tests/response-unmasker.test.js` 24→35 cases).

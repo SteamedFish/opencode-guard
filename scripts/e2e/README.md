@@ -6,10 +6,13 @@ let you prove what did (masked) and did not (original) leave the machine.
 
 [中文文档](README.zh-CN.md)
 
-## capture-server.py — fake OpenAI-compatible provider
+## capture-server.py — fake provider (OpenAI-compatible + Anthropic Messages)
 
-Captures every request body to a log file and replies with an SSE
-`chat.completion` stream. stdlib only, single file.
+Captures every request body to a log file and replies with an SSE stream:
+OpenAI `chat.completion` chunks on `/v1/chat/completions`, or Anthropic
+Messages API events (`message_start` / `content_block_*` / `message_delta` /
+`message_stop`) on `/v1/messages` when the mode starts with `anthropic`.
+stdlib only, single file.
 
 ```bash
 python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE] [flags...]
@@ -26,6 +29,10 @@ python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE] [f
 | `tool` | Without a `"role":"tool"` message: replies with an OpenAI streaming `tool_call` for the first tool named `write` (else `bash`, else the first tool), with arguments embedding the last email in the request body (`write`/`bash` write it to `tool-probe-output.txt` in the sandbox cwd). With a `"role":"tool"` message (second round-trip): plain single-chunk echo plus a `=== TOOL-ROUND ===` marker line in the capture log. |
 | `tool-split` | Like `tool`, but the tool-call `function.arguments` JSON string is split across TWO SSE delta chunks with the split point in the MIDDLE of the email value inside the arguments (fragment 1 ends mid-email, fragment 2 starts with the rest). If no email is found in the request, splits at half the arguments length. Second round-trip behaves exactly like `tool` mode (plain echo + `=== TOOL-ROUND ===` marker). |
 | `echo-message` | Parses the request JSON and streams back the text of the LAST `user` message verbatim, split into 3 roughly-equal content chunks (no `echo: ` prefix). Handles string content and array-of-parts content (text parts joined with a space); replies `no-user-text` if there is no user message or no text. Use this to prove the response-restore hook restores non-email masked values (e.g. AI-detected street addresses). |
+| `anthropic` | Anthropic Messages API text stream (`message_start`, one text block, `message_delta`, `message_stop`) echoing `echo: <last-email-in-request>` in a single `content_block_delta` (`text_delta`). Served on paths containing `messages` (use provider package `aisdk:@ai-sdk/anthropic` with `baseURL` ending in `/v1`). |
+| `anthropic-split` | Like `anthropic`, but the email is split across TWO `text_delta` events with the split point mid-email, chunk 2 carrying the same trailing `abcdef` suffix as `echo-split`. Exercises cross-event restore + hold-back in the Anthropic shape. |
+| `anthropic-last` | Like `anthropic`, but a filler `working... ` delta comes first and the echo email appears only in the final delta before `content_block_stop` — exercises flush/restore behaviour at stream end (the Anthropic shape has no `[DONE]`). |
+| `anthropic-tool-split` | Anthropic `tool_use` block whose `input` is streamed as TWO `input_json_delta` (`partial_json`) fragments, split in the MIDDLE of the email value inside the arguments; `stop_reason` is `tool_use`. On the second round-trip (a message containing a `tool_result` block) replies with a plain `anthropic` echo. Tool selection/args match `tool` mode, so `write`/`shell` write the probe value to `tool-probe-output.txt` (verify with `--mode=tool-file`). |
 
 ### Flags
 
@@ -43,7 +50,10 @@ meaningful (e.g. `--mode=echo-split --crlf --keepalive --no-done`,
 | `--tool-stdout` | For shell-style tools (`bash`/`shell`): print the secret to stdout instead of redirecting it into `tool-probe-output.txt`, so the tool RESULT carries the secret (tests `tool.execute.after` result masking on the next-round request body). |
 
 In all modes every request body is appended to the capture log exactly as
-received.
+received. `--no-done` and `--reasoning` apply to the OpenAI-shaped modes only
+(the Anthropic shape has no `[DONE]` frame and no `reasoning_content` delta;
+use `anthropic-last` to probe stream-end flush instead). `--crlf`,
+`--keepalive`, `--prefer-tool` and `--tool-stdout` apply to both shapes.
 
 ### Smoke test
 
@@ -55,6 +65,35 @@ curl -s http://127.0.0.1:16400/v1/chat/completions \
   -d '{"messages":[{"role":"user","content":"my email is smoke@test.dev"}]}'
 kill $PID
 ```
+
+### Anthropic Messages API providers
+
+Point an `@ai-sdk/anthropic` provider at the capture server: the SDK posts to
+`${baseURL}/messages`, so `baseURL` must end in `/v1`, and any path containing
+`messages` is answered (with the `anthropic*` mode selected).
+
+```jsonc
+{
+  "providers": {
+    "capture": {
+      "package": "aisdk:@ai-sdk/anthropic",
+      "settings": { "baseURL": "http://127.0.0.1:16500/v1", "apiKey": "sk-ant-dummy" },
+      "models": { "probe": { "capabilities": { "tools": true, "input": ["text"], "output": ["text"] } } }
+    }
+  },
+  "model": "capture/probe",
+  "agents": { "title": { "model": "capture/probe" } }
+}
+```
+
+```bash
+python3 scripts/e2e/capture-server.py 16500 cap.log --mode=anthropic-split &
+opencode run --standalone -m capture/probe "My email is x42@example.com. Reply with exactly: OK" > out.txt
+python3 scripts/e2e/verify-probe.py cap.log out.txt --mode=restore
+```
+
+Verified 2026-09-19 against opencode v2.0.6 (`anthropic`, `anthropic-split`,
+`anthropic-last`, `anthropic-tool-split --mode=tool-file`): all PASS.
 
 ## fake-mcp-server.py — fake MCP server on stdio
 

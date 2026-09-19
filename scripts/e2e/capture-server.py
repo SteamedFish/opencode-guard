@@ -34,15 +34,30 @@ Modes:
               proves restore of non-email masked values (e.g. street
               addresses). Falls back to "no-user-text".
 
+Anthropic Messages API modes (SSE shape: message_start / content_block_* /
+message_delta / message_stop; served on any path containing "messages"):
+
+  anthropic       One text block: "echo: <last-email-in-request>".
+  anthropic-split Echo the email split across two content_block_delta
+                  (text_delta) events, chunk 2 ending with a trailing
+                  "abcdef" suffix (not part of the email) - mirrors
+                  echo-split's hold-back test in the Anthropic shape.
+  anthropic-last  Filler "working... " delta, then the echo email in the
+                  final delta right before content_block_stop - tests
+                  flush-at-stream-end in the Anthropic shape.
+
 Flags (independent, combinable with any mode and each other):
   --crlf      Emit all SSE line endings as \\r\\n (frames end with \\r\\n\\r\\n).
   --keepalive Emit one SSE comment line ": ka" before the first data event,
-              and one between the first and second data events.
+              and one between the first and second data event.
   --no-done   Omit the final "data: [DONE]" frame; the stream just ends
-              after the finish chunk.
+              after the finish chunk. (OpenAI modes only - the Anthropic
+              shape has no [DONE] frame; use "anthropic-last" to probe
+              flush-at-stream-end there.)
   --reasoning Insert an extra FIRST data chunk whose delta is
               {"role":"assistant","reasoning_content":"<email>"} (the same
               echoed email the mode would use), before the normal chunks.
+              (OpenAI modes only.)
 """
 import json
 import re
@@ -118,6 +133,18 @@ def last_email(body):
     return emails[-1].decode().rstrip('.') if emails else None
 
 
+def tool_name(t):
+    """Tool name from either shape: OpenAI `{function:{name}}` or Anthropic
+    `{name}`."""
+    return (t.get('function') or t).get('name')
+
+
+def tool_schema(t):
+    """JSON-schema of a tool's parameters from either shape: OpenAI
+    `function.parameters` or Anthropic `input_schema`."""
+    return (t.get('function') or {}).get('parameters') or t.get('input_schema') or {}
+
+
 def pick_tool(req):
     """--prefer-tool=NAME if present, else first tool named 'write', else
     'bash', else the first tool. None if no tools."""
@@ -126,11 +153,11 @@ def pick_tool(req):
         return None
     if PREFER_TOOL:
         for t in tools:
-            if (t.get('function') or {}).get('name') == PREFER_TOOL:
+            if tool_name(t) == PREFER_TOOL:
                 return t
     for want in ('write', 'bash'):
         for t in tools:
-            if (t.get('function') or {}).get('name') == want:
+            if tool_name(t) == want:
                 return t
     return tools[0]
 
@@ -138,7 +165,7 @@ def pick_tool(req):
 def tool_arguments(tool, email):
     """Build the arguments JSON string for a tool_call, or None to fall back
     to plain echo text mode."""
-    name = (tool.get('function') or {}).get('name')
+    name = tool_name(tool)
     if name == 'write':
         # opencode v2 write tool schema uses "path" (older builds used
         # "filePath"); extra keys fail additionalProperties:false validation.
@@ -158,7 +185,7 @@ def tool_arguments(tool, email):
         return json.dumps({"command": cmd})
     # Best-effort for any other tool: first required string property from its
     # parameters schema, as a single-string-arg object.
-    params = (tool.get('function') or {}).get('parameters') or {}
+    params = tool_schema(tool)
     props = params.get('properties') or {}
     for req_key in (params.get('required') or []):
         prop = props.get(req_key) or {}
@@ -264,11 +291,139 @@ def build_tool_split(name, arguments, email):
     ]
 
 
+def a_event(obj):
+    """One Anthropic SSE event: an `event:` line (the type) plus the matching
+    `data:` JSON line. @ai-sdk/anthropic ignores the event name and
+    discriminates on the JSON `type`, but real Anthropic streams emit it, so
+    the fake provider does too."""
+    return 'event: ' + obj['type'] + EOL + 'data: ' + json.dumps(obj) + EOL + EOL
+
+
+def a_message_start():
+    return a_event({
+        "type": "message_start",
+        "message": {
+            "id": "msg_capture", "type": "message", "role": "assistant",
+            "model": "claude-capture", "content": [],
+            "stop_reason": None, "stop_sequence": None,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
+    })
+
+
+def a_block_start(index=0):
+    return a_event({"type": "content_block_start", "index": index,
+                    "content_block": {"type": "text", "text": ""}})
+
+
+def a_text_delta(text, index=0):
+    return a_event({"type": "content_block_delta", "index": index,
+                    "delta": {"type": "text_delta", "text": text}})
+
+
+def a_block_stop(index=0):
+    return a_event({"type": "content_block_stop", "index": index})
+
+
+def a_tool_block_start(name, index=0):
+    return a_event({"type": "content_block_start", "index": index,
+                    "content_block": {"type": "tool_use", "id": "toolu_capture1",
+                                      "name": name, "input": {}}})
+
+
+def a_json_delta(partial, index=0):
+    return a_event({"type": "content_block_delta", "index": index,
+                    "delta": {"type": "input_json_delta", "partial_json": partial}})
+
+
+def a_message_delta(out_tokens=1, stop_reason='end_turn'):
+    return a_event({"type": "message_delta",
+                    "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+                    "usage": {"output_tokens": out_tokens}})
+
+
+def a_message_stop():
+    return a_event({"type": "message_stop"})
+
+
+def build_anthropic(email, split=False, last=False):
+    """Anthropic Messages API text stream echoing `email`. split=True cuts the
+    email across two content_block_delta events (chunk 2 also carries an
+    "abcdef" suffix); last=True puts the email only in the final delta so the
+    stream end is what flushes it."""
+    parts = [a_message_start(), a_block_start()]
+    if split and len(email) >= 4:
+        half = len(email) // 2
+        parts.append(a_text_delta('echo: ' + email[:half]))
+        parts.append(a_text_delta(email[half:] + 'abcdef'))
+    elif last:
+        parts.append(a_text_delta('working... '))
+        parts.append(a_text_delta('echo: ' + email))
+    else:
+        parts.append(a_text_delta('echo: ' + email))
+    parts.append(a_block_stop())
+    parts.append(a_message_delta())
+    parts.append(a_message_stop())
+    return parts
+
+
+def build_anthropic_tool(name, arguments, email):
+    """Anthropic tool_use stream: one tool_use block whose `input` is streamed
+    as two input_json_delta fragments, split in the MIDDLE of the email value
+    inside the arguments (fragment 1 ends mid-email)."""
+    idx = arguments.find(email) if email else -1
+    if idx >= 0 and len(email) >= 2:
+        split = idx + len(email) // 2
+    else:
+        split = len(arguments) // 2
+    return [
+        a_message_start(),
+        a_tool_block_start(name),
+        a_json_delta(arguments[:split]),
+        a_json_delta(arguments[split:]),
+        a_block_stop(),
+        a_message_delta(stop_reason='tool_use'),
+        a_message_stop(),
+    ]
+
+
+def has_anthropic_tool_result(req):
+    """True when any message carries a tool_result content block (Anthropic's
+    second round-trip after a tool executes)."""
+    for m in req.get('messages') or []:
+        content = m.get('content') if isinstance(m, dict) else None
+        if isinstance(content, list) and any(
+            isinstance(b, dict) and b.get('type') == 'tool_result' for b in content
+        ):
+            return True
+    return False
+
+
 def build_response(body):
     """Return SSE bytes for the configured mode and flags."""
     email = last_email(body) or FALLBACK_ECHO
     parts = None
-    if MODE == 'echo-split':
+    if MODE == 'anthropic':
+        parts = build_anthropic(email)
+    elif MODE == 'anthropic-split':
+        parts = build_anthropic(email, split=True)
+    elif MODE == 'anthropic-last':
+        parts = build_anthropic(email, last=True)
+    elif MODE == 'anthropic-tool-split':
+        try:
+            req = json.loads(body)
+        except ValueError:
+            req = {}
+        if has_anthropic_tool_result(req):
+            # Second round-trip (after the tool executed): plain echo.
+            parts = build_anthropic(last_email(body) or TOOL_ROUND_FALLBACK)
+        else:
+            tool = pick_tool(req)
+            args_json = tool_arguments(tool, email) if tool is not None else None
+            if args_json is not None:
+                parts = build_anthropic_tool(tool_name(tool), args_json, email)
+            # No usable tool: parts stays None -> echo fallback below.
+    elif MODE == 'echo-split':
         parts = build_echo_split(email)
     elif MODE == 'echo-last':
         parts = build_echo_last(email)
@@ -296,7 +451,7 @@ def build_response(body):
         prefer = None
         if PREFER_TOOL:
             for t in (req.get('tools') or []):
-                if (t.get('function') or {}).get('name') == PREFER_TOOL:
+                if tool_name(t) == PREFER_TOOL:
                     prefer = t
                     break
         if prefer is not None and not PREFER_STATE['called']:
@@ -319,7 +474,18 @@ def build_response(body):
             parts = build_echo(round_email)
         # No usable tools: parts stays None -> plain echo fallback below.
     if parts is None:
-        parts = build_echo(email)
+        parts = build_anthropic(email) if MODE.startswith('anthropic') else build_echo(email)
+    if MODE.startswith('anthropic'):
+        # The Anthropic shape has no [DONE] frame; just concatenate (keep-alive
+        # comments may still be interleaved when --keepalive is set).
+        out = []
+        if KEEPALIVE:
+            out.append(keepalive())
+        for i, p in enumerate(parts):
+            if KEEPALIVE and i == 1:
+                out.append(keepalive())
+            out.append(p)
+        return ''.join(out).encode()
     if REASONING:
         parts = [chunk({"role": "assistant",
                         "reasoning_content": email})] + parts
@@ -343,7 +509,7 @@ class Handler(BaseHTTPRequestHandler):
         with open(LOG, 'ab') as f:
             f.write(marker + b'=== POST %s ===\n' % self.path.encode()
                     + body + b'\n')
-        if 'chat/completions' in self.path:
+        if 'chat/completions' in self.path or ('messages' in self.path and MODE.startswith('anthropic')):
             # Echo the LAST email in the request: under opencode-guard this is the
             # masked token registered in the current session's mapping, so the
             # http.response restore hook can swap it back to the original.

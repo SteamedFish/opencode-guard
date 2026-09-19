@@ -6,10 +6,12 @@
 
 [English Documentation](README.md)
 
-## capture-server.py —— 伪造的 OpenAI 兼容 provider
+## capture-server.py —— 伪造 provider（OpenAI 兼容 + Anthropic Messages）
 
-把每个请求体记录到日志文件，并以 SSE `chat.completion` 流响应。仅依赖
-标准库，单文件。
+把每个请求体记录到日志文件，并以 SSE 流响应：`/v1/chat/completions` 上返回
+OpenAI `chat.completion` chunk；当模式以 `anthropic` 开头时，在 `/v1/messages`
+上返回 Anthropic Messages API 事件（`message_start` / `content_block_*` /
+`message_delta` / `message_stop`）。仅依赖标准库，单文件。
 
 ```bash
 python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE] [flags...]
@@ -26,6 +28,10 @@ python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE] [f
 | `tool` | 请求中没有 `"role":"tool"` 消息时：以 OpenAI 流式 `tool_call` 响应，选择第一个名为 `write` 的工具（否则 `bash`，否则数组第一个），参数中嵌入请求体里最后一个 email（`write`/`bash` 会把它写入沙箱 cwd 下的 `tool-probe-output.txt`）。请求中含 `"role":"tool"` 消息时（工具执行后的第二轮）：普通的单 chunk 回显，并在捕获日志中写入 `=== TOOL-ROUND ===` 标记行。 |
 | `tool-split` | 与 `tool` 类似，但 tool-call 的 `function.arguments` JSON 字符串被拆到两个 SSE delta chunk 中，拆分点位于 arguments 内 email 值的正中（第 1 个片段在 email 中间结束，第 2 个片段从剩余部分开始）。请求中没有 email 时按 arguments 长度对半拆。第二轮行为与 `tool` 模式完全一致（普通回显 + `=== TOOL-ROUND ===` 标记）。 |
 | `echo-message` | 解析请求 JSON，把最后一条 `user` 消息的文本原样流式返回，拆成 3 个大致均等的 content chunk（不带 `echo: ` 前缀）。同时支持字符串 content 和数组 parts content（text 部分以空格连接）；没有 user 消息或没有文本时回复 `no-user-text`。用于验证 response-restore 钩子能还原非 email 类型的掩码值（例如 AI 检测出的街道地址）。 |
+| `anthropic` | Anthropic Messages API 文本流（`message_start`、一个 text block、`message_delta`、`message_stop`），在单个 `content_block_delta`（`text_delta`）中回显 `echo: <请求中最后一个 email>`。由路径含 `messages` 的请求触发（provider 需用 `aisdk:@ai-sdk/anthropic`，且 `baseURL` 以 `/v1` 结尾）。 |
+| `anthropic-split` | 与 `anthropic` 类似，但 email 被拆到两个 `text_delta` 事件中（拆分点位于 email 正中），第 2 个事件带与 `echo-split` 相同的 `abcdef` 后缀。用于验证 Anthropic 形状下的跨事件还原 + hold-back。 |
+| `anthropic-last` | 与 `anthropic` 类似，但先发一个填充 delta `working... `，回显 email 只出现在 `content_block_stop` 之前的最后一个 delta 中 —— 用于验证流结束时的 flush/还原行为（Anthropic 形状没有 `[DONE]`）。 |
+| `anthropic-tool-split` | Anthropic `tool_use` block，其 `input` 以两个 `input_json_delta`（`partial_json`）片段流式发送，拆分点位于 arguments 内 email 值的正中；`stop_reason` 为 `tool_use`。第二轮（消息中含 `tool_result` block）返回普通的 `anthropic` 回显。工具选择/参数与 `tool` 模式一致，因此 `write`/`shell` 会把探针值写入 `tool-probe-output.txt`（用 `--mode=tool-file` 校验）。 |
 
 ### 标志位
 
@@ -42,7 +48,10 @@ python3 scripts/e2e/capture-server.py [port] [capture-log-path] [--mode=MODE] [f
 | `--prefer-tool=NAME` | 在 `tool`/`tool-split` 模式下，从请求的 tools 数组中选择名为 NAME 的工具，代替默认的 `write`→`bash`→第一个 优先级。必须项：不同 agent/发行版的工具集不同（例如 shell 工具可能叫 `shell`，MCP 工具可能根本不存在）。 |
 | `--tool-stdout` | 对 shell 类工具（`bash`/`shell`）：把秘密打印到 stdout 而不是重定向进 `tool-probe-output.txt`，使工具【结果】携带秘密（测试下一轮请求 body 中 `tool.execute.after` 的结果 masking）。 |
 
-在所有模式下，每个请求体都会按原样追加到捕获日志。
+在所有模式下，每个请求体都会按原样追加到捕获日志。`--no-done` 与
+`--reasoning` 仅适用于 OpenAI 形状的模式（Anthropic 形状没有 `[DONE]` 帧，也没有
+`reasoning_content` delta；如需验证流结束 flush，请用 `anthropic-last`）。
+`--crlf`、`--keepalive`、`--prefer-tool`、`--tool-stdout` 对两种形状都适用。
 
 ### 冒烟测试
 
@@ -54,6 +63,35 @@ curl -s http://127.0.0.1:16400/v1/chat/completions \
   -d '{"messages":[{"role":"user","content":"my email is smoke@test.dev"}]}'
 kill $PID
 ```
+
+### Anthropic Messages API provider
+
+把 `@ai-sdk/anthropic` provider 指向捕获服务器：SDK 会 POST 到
+`${baseURL}/messages`，因此 `baseURL` 必须以 `/v1` 结尾；任何路径含 `messages`
+的请求都会得到响应（并选用 `anthropic*` 模式）。
+
+```jsonc
+{
+  "providers": {
+    "capture": {
+      "package": "aisdk:@ai-sdk/anthropic",
+      "settings": { "baseURL": "http://127.0.0.1:16500/v1", "apiKey": "sk-ant-dummy" },
+      "models": { "probe": { "capabilities": { "tools": true, "input": ["text"], "output": ["text"] } } }
+    }
+  },
+  "model": "capture/probe",
+  "agents": { "title": { "model": "capture/probe" } }
+}
+```
+
+```bash
+python3 scripts/e2e/capture-server.py 16500 cap.log --mode=anthropic-split &
+opencode run --standalone -m capture/probe "My email is x42@example.com. Reply with exactly: OK" > out.txt
+python3 scripts/e2e/verify-probe.py cap.log out.txt --mode=restore
+```
+
+已于 2026-09-19 针对 opencode v2.0.6 验证通过（`anthropic`、`anthropic-split`、
+`anthropic-last`、`anthropic-tool-split --mode=tool-file` 全部 PASS）。
 
 ## fake-mcp-server.py —— stdio 上的伪造 MCP 服务器
 
