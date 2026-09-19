@@ -1,5 +1,6 @@
 import { createAIProvider } from './providers.js';
 import { mergeResults } from './merge.js';
+import { expandFlaggedOccurrences } from './expand.js';
 
 export class AIDetector {
   constructor(config = {}) {
@@ -64,14 +65,22 @@ export class AIDetector {
 
     try {
       const results = await this._detectWithTimeout(text);
-      return results.map(r => ({
+      const mapped = results.map(r => ({
         start: r.start,
         end: r.end,
-        text: r.value,
+        // Providers may return only offsets (OpenAI/custom) or a value (local);
+        // derive the literal from the text so the engine never sees undefined.
+        text: typeof r.value === 'string' && r.value.length > 0
+          ? r.value
+          : (Number.isInteger(r.start) && Number.isInteger(r.end) ? text.slice(r.start, r.end) : ''),
         category: r.type,
         confidence: r.confidence,
         maskAs: this._getMaskerForCategory(r.type),
       }));
+      // The model flags a value once; the same value can occur several times in
+      // the text. Masking only the bound occurrence would leak the others, so
+      // expand to every whole-token occurrence (overlap handled downstream).
+      return expandFlaggedOccurrences(text, mapped);
     } catch (err) {
       if (process.env.OPENCODE_GUARD_DEBUG) {
         console.warn(`[opencode-guard] AI detection failed: ${err.message}`);

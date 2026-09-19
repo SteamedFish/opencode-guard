@@ -135,11 +135,11 @@ export class LocalAIProvider extends AIProvider {
 
       const resolved = [];
       // Resolve spans strictly left-to-right and never rebind to an earlier
-      // occurrence: masking the wrong instance would leak the flagged one.
-      // TODO(fail-closed): when the model flags one of several identical
-      // occurrences, masking all occurrences of that value (engine change)
-      // would close the residual leak; left-to-right binding alone can bind
-      // the wrong duplicate.
+      // occurrence: each flagged entity must anchor to a real occurrence.
+      // The "which duplicate did the model mean" ambiguity, and the residual
+      // leak from the remaining duplicates, are closed downstream:
+      // AIDetector.detect expands every span to all whole-token occurrences of
+      // the same value (see ai-detector/expand.js).
       let searchFrom = 0;
       // Lazily-built whitespace-stripped view for the detokenization fallback
       // (models may alter whitespace, e.g. "Maple Hollow" -> "MapleHollow").
