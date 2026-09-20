@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-09-21 — Safe on frozen tool args/output from opencode v2.x (omos/fix-restore-frozen)
+
+Closed the open follow-up in `plan/TODO.md`. 363 tests (was 359; +4).
+
+- **`src/restore.js`** (`restoreDeep`): skip the per-index / per-key assignment when the recursive call returns the same value. The unconditional `value[i] = …` / `value[key] = …` writes threw `TypeError: Attempted to assign to readonly property` on inputs frozen by opencode v2.x's v2 event system (Immer `produce()` — see [opencode#25873](https://github.com/anomalyco/opencode/issues/25873)). A session with no mappings of its own would walk every property and throw, breaking the `question` tool and any other tool whose args or output arrived frozen. JSDoc gains a note about frozen-input safety.
+- **`src/engine.js`** (`redactDeep`): same fix for the masking side. Empty patterns and no AI detector would otherwise throw on every frozen tool result (e.g. the `question` tool output). JSDoc updated.
+- **Tests**: `tests/restore.test.js` +3, `tests/engine.test.js` +2 — frozen question-tool-shaped objects and deeply nested frozen arrays pass through without throwing; mutable inputs with actual restores still mutate correctly.
+- **Verification**: end-to-end test via opencode v2.0.8 — the `question` tool now returns a normal response instead of `{ "error": { "type": "unknown", "message": "Attempted to assign to readonly property." }, "content": [] }` after the plugin is loaded against an Immer-frozen args object.
+
 ## 2026-09-19 — AI detection: mask every occurrence of a duplicate flagged value (omos/ai-mask-occurrences)
 
 Closed the open follow-up in `plan/TODO.md`. 359 tests (was 343; +16).

@@ -190,3 +190,52 @@ test('restoreText still chain-restores with the regex implementation', () => {
   const result = restoreText('value: maskedA', session);
   assert.strictEqual(result, 'value: prefix final-original suffix');
 });
+
+test('restoreDeep does not throw on frozen input when no values change', () => {
+  // Regression for opencode#25873: opencode v2.x Immer-freezes tool
+  // args/output before plugin hooks run. Unconditional assignment
+  // `value[key] = next` threw "Attempted to assign to readonly property".
+  // With an empty session, every recursive call returns the same string,
+  // so the write must be skipped.
+  const session = createTestSession();
+  const frozen = Object.freeze({
+    question: 'Test question?',
+    header: 'ask-tool-test',
+    options: Object.freeze([
+      Object.freeze({ label: 'Yes', description: 'confirm' }),
+      Object.freeze({ label: 'No', description: 'deny' }),
+    ]),
+  });
+
+  assert.doesNotThrow(() => restoreDeep(frozen, session));
+  assert.strictEqual(frozen.question, 'Test question?');
+  assert.strictEqual(frozen.options[0].label, 'Yes');
+});
+
+test('restoreDeep still mutates mutable input when a value changes', () => {
+  // Sanity: the guard must not break the original contract. When a
+  // property does change, the parent must still receive the new value.
+  // (A frozen object can't be mutated by definition, so this case can
+  // only be exercised on a mutable input.)
+  const session = createTestSession();
+  session.maskedToOriginal.set('MASKED', 'real-value');
+
+  const obj = {
+    label: 'MASKED',
+    nested: { inner: 'MASKED' },
+  };
+
+  restoreDeep(obj, session);
+  assert.strictEqual(obj.label, 'real-value');
+  assert.strictEqual(obj.nested.inner, 'real-value');
+});
+
+test('restoreDeep handles deeply nested frozen arrays', () => {
+  const session = createTestSession();
+  const frozen = Object.freeze([
+    Object.freeze([Object.freeze(['a', 'b'])]),
+    Object.freeze([Object.freeze(['c', 'd'])]),
+  ]);
+
+  assert.doesNotThrow(() => restoreDeep(frozen, session));
+});

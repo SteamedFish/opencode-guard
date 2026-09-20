@@ -46,6 +46,12 @@ export async function redactText(text, patterns, session, aiDetector = null) {
  * keep the original (unmasked) values — clone first (e.g. structuredClone)
  * when in doubt.
  *
+ * Safe on frozen inputs when no redaction would apply: the per-property
+ * write is skipped when the recursive call returns the same value, so a
+ * frozen object whose strings contain no detected values passes through
+ * untouched. (opencode v2.x Immer-freezes tool args/output before plugin
+ * hooks run — see opencode#25873.)
+ *
  * @param {*} value - Mutated in place when it is an object or array
  * @param {Object} patterns
  * @param {MaskSession} session
@@ -65,7 +71,15 @@ export async function redactDeep(value, patterns, session, aiDetector = null, vi
     }
     visited.add(value);
     for (let i = 0; i < value.length; i++) {
-      value[i] = await redactDeep(value[i], patterns, session, aiDetector, visited);
+      // Skip the write when the recursive call returns the same value
+      // (string with no detected matches, or a no-op traversal of a nested
+      // object/array). Unconditional writes throw "Attempted to assign to
+      // readonly property" on frozen inputs — opencode v2.x Immer-freezes
+      // tool args/output before plugin hooks run (opencode#25873), and an
+      // empty session (no patterns or aiDetector) redacts to identity but
+      // still triggers the write on every property.
+      const next = await redactDeep(value[i], patterns, session, aiDetector, visited);
+      if (next !== value[i]) value[i] = next;
     }
     return value;
   }
@@ -76,7 +90,9 @@ export async function redactDeep(value, patterns, session, aiDetector = null, vi
     }
     visited.add(value);
     for (const key of Object.keys(value)) {
-      value[key] = await redactDeep(value[key], patterns, session, aiDetector, visited);
+      // See the array branch above for why the write is guarded.
+      const next = await redactDeep(value[key], patterns, session, aiDetector, visited);
+      if (next !== value[key]) value[key] = next;
     }
     return value;
   }
