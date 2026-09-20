@@ -150,3 +150,40 @@ test('redactText masks every occurrence of an AI-flagged value', async () => {
   assert.strictEqual(maskedTokens[0], maskedTokens[1], 'the same value must map to the same mask');
   assert.strictEqual(session.lookupOriginal(maskedTokens[0]), value);
 });
+
+test('redactDeep does not throw on frozen input when no values change', async () => {
+  // Regression for opencode#25873: opencode v2.x Immer-freezes tool
+  // args/output before plugin hooks run. Unconditional assignment
+  // `value[key] = next` threw "Attempted to assign to readonly property".
+  // With empty patterns and no AI detector, every recursive call returns
+  // the same string, so the write must be skipped.
+  const session = createTestSession();
+  const patterns = { regex: [], keywords: [], exclude: new Set() };
+  const frozen = Object.freeze({
+    question: 'Test question?',
+    header: 'ask-tool-test',
+    options: Object.freeze([
+      Object.freeze({ label: 'Yes', description: 'confirm' }),
+      Object.freeze({ label: 'No', description: 'deny' }),
+    ]),
+  });
+
+  await assert.doesNotReject(async () => {
+    await redactDeep(frozen, patterns, session, null);
+  });
+  assert.strictEqual(frozen.question, 'Test question?');
+  assert.strictEqual(frozen.options[0].label, 'Yes');
+});
+
+test('redactDeep handles deeply nested frozen arrays', async () => {
+  const session = createTestSession();
+  const patterns = { regex: [], keywords: [], exclude: new Set() };
+  const frozen = Object.freeze([
+    Object.freeze([Object.freeze(['a', 'b'])]),
+    Object.freeze([Object.freeze(['c', 'd'])]),
+  ]);
+
+  await assert.doesNotReject(async () => {
+    await redactDeep(frozen, patterns, session, null);
+  });
+});
